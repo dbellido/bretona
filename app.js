@@ -11,8 +11,9 @@ import * as citas from "./citas.js";
 import * as cupones from "./cupones.js";
 import * as tareas from "./tareas.js";
 import * as pisosM from "./pisos.js";
+import * as menuM from "./menu.js";
 
-const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM];
+const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM];
 
 /* ---------- Utilidades ---------- */
 function show(screen) {
@@ -20,8 +21,8 @@ function show(screen) {
 }
 
 /* ---------- Pestañas ---------- */
-const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM };
-const IN_MORE = ["gastos", "viajes", "pisos"];
+const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM, menu: menuM };
+const IN_MORE = ["gastos", "viajes", "pisos", "menu"];
 function route() {
   if (!hid) return;
   let v = location.hash.slice(1);

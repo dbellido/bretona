@@ -126,15 +126,15 @@ export async function shrink(file, max = 1600) {
 }
 
 // Devuelve el JSON que responde Gemini, o lanza un Error con un mensaje para la persona.
-export async function askGemini(prompt, base64) {
+export async function askGemini(prompt, base64 = null, { temperature = 0.9 } = {}) {
   let text = null, lastErr = null;
   try {
     if (!ctx.F.getAI) Object.assign(ctx.F, await import(FB + "firebase-ai.js"));
     const ai = ctx.F.getAI(ctx.app, { backend: new ctx.F.GoogleAIBackend() });
     for (const model of geminiModels) {
       try {
-        const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: 0.1 } });
-        const r = await m.generateContent([prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }]);
+        const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: base64 ? 0.1 : temperature } });
+        const r = await m.generateContent(base64 ? [prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }] : prompt);
         text = r.response.text();
         break;
       } catch (e) { lastErr = e; console.warn("Modelo", model, e); }
@@ -148,7 +148,7 @@ export async function askGemini(prompt, base64) {
         ? "La lectura de fotos no está activada en Firebase (LEEME, paso 5)."
         : /quota|429|RESOURCE_EXHAUSTED/i.test(msg)
           ? "Se ha llegado al límite gratuito de fotos por ahora. Prueba dentro de un rato."
-          : "No se ha podido leer la foto. Prueba otra vez o con más luz.");
+          : base64 ? "No se ha podido leer la foto. Prueba otra vez o con más luz." : "Gemini no ha respondido. Prueba otra vez en un momento.");
   }
   try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
   catch { return null; }

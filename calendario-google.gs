@@ -9,6 +9,7 @@ const BUSQUEDA_PISOS = 'from:(idealista.com OR fotocasa.es OR yaencontre.com) ne
 function doGet(e) {
   const tipo = e && e.parameter && e.parameter.tipo;
   if (tipo === 'pisos') return salida(pisos());
+  if (tipo === 'ruta') return salida(ruta(e.parameter.origen || '', e.parameter.hora || '08:30'));
   return salida(calendario());
 }
 
@@ -112,6 +113,50 @@ function extraer(html, portal) {
   return res;
 }
 
+/* ---------- Trayecto en transporte público ---------- */
+const DESTINOS = {
+  'Nuevos Ministerios': 'Estación de Nuevos Ministerios, Madrid',
+  'Chamartín': 'Estación de Madrid-Chamartín-Clara Campoamor, Madrid',
+};
+
+// Próximo día laborable a la hora indicada, en hora de Madrid.
+function proximaSalida(hora) {
+  let d = new Date(Date.now() + 864e5);
+  while (['Sat', 'Sun'].indexOf(Utilities.formatDate(d, 'Europe/Madrid', 'EEE')) >= 0) d = new Date(d.getTime() + 864e5);
+  const dia = Utilities.formatDate(d, 'Europe/Madrid', 'yyyy-MM-dd');
+  const zona = Utilities.formatDate(d, 'Europe/Madrid', 'XXX');
+  return new Date(dia + 'T' + (/^\d{2}:\d{2}$/.test(hora) ? hora : '08:30') + ':00' + zona);
+}
+
+function ruta(origen, hora) {
+  origen = String(origen).slice(0, 200);
+  if (!origen) return { error: 'sin origen' };
+  const cache = CacheService.getScriptCache();
+  const clave = 'r:' + Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, origen + '|' + hora));
+  const guardado = cache.get(clave);
+  if (guardado) return JSON.parse(guardado);
+  const salidaHora = proximaSalida(hora);
+  const tiempos = {};
+  let desde = '';
+  Object.keys(DESTINOS).forEach((nombre) => {
+    try {
+      const r = Maps.newDirectionFinder().setOrigin(origen).setDestination(DESTINOS[nombre])
+        .setMode(Maps.DirectionFinder.Mode.TRANSIT).setDepart(salidaHora).setLanguage('es').getDirections();
+      if (r.status === 'OK' && r.routes.length) {
+        const tramo = r.routes[0].legs[0];
+        tiempos[nombre] = Math.round(tramo.duration.value / 60);
+        desde = desde || tramo.start_address;
+      }
+    } catch (err) {}
+  });
+  const nombres = Object.keys(tiempos);
+  if (!nombres.length) return { error: 'sin ruta', origen: origen };
+  const mejor = nombres.sort((a, b) => tiempos[a] - tiempos[b])[0];
+  const res = { origen: origen, desde: desde, tiempos: tiempos, mejor: { destino: mejor, min: tiempos[mejor] } };
+  try { cache.put(clave, JSON.stringify(res), 21600); } catch (err) {}
+  return res;
+}
+
 function salida(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -120,6 +165,9 @@ function salida(obj) {
 function probar() {
   const r = calendario();
   Logger.log(r.error || ('Calendario OK: ' + r.calendario + ' · ' + r.eventos + ' eventos'));
+}
+function probarRuta() {
+  Logger.log(JSON.stringify(ruta('Calle de Bravo Murillo 150, Madrid', '08:30')));
 }
 function probarPisos() {
   CacheService.getScriptCache().remove('pisos');
