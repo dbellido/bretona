@@ -1,41 +1,35 @@
-import { firebaseConfig, geminiModels } from "./firebase-config.js";
+import { firebaseConfig } from "./firebase-config.js";
+import {
+  FB, ctx, $, esc, cap, norm, initials, LS, toast, failed, houseRef, stores,
+  storeOptions, newStore, shrink, askGemini, AISLES, AISLE_IDS, guessAisle,
+} from "./core.js";
+import * as gastos from "./gastos.js";
+import * as viajes from "./viajes.js";
+import * as calendario from "./calendario.js";
+import * as citas from "./citas.js";
+import * as cupones from "./cupones.js";
 
-const FB = "https://www.gstatic.com/firebasejs/12.19.0/";
-
-/* ---------- Secciones del súper y clasificación automática ---------- */
-const AISLES = [
-  { id: "fruta", name: "Fruta y verdura", c: "#3f9a4f", k: ["manzana","platano","naranja","mandarina","limon","fresa","uva","pera","melocoton","tomate","lechuga","cebolla","ajo","patata","zanahoria","pimiento","calabacin","berenjena","pepino","aguacate","espinaca","brocoli","coliflor","fruta","verdura","melon","sandia","kiwi","champinon","seta","perejil","cilantro","puerro","judia verde","alcachofa","calabaza","mango","pina","cereza"] },
-  { id: "carne", name: "Carne y pescado", c: "#c2553a", k: ["pollo","carne","ternera","cerdo","cordero","jamon","pavo","chorizo","salchicha","hamburguesa","pescado","merluza","salmon","gamba","langostino","bacalao","lomo","filete","embutido","fuet","salchichon","mortadela","sepia","calamar","mejillon","dorada","lubina","costilla","picada"] },
-  { id: "lacteos", name: "Lácteos y huevos", c: "#d9a520", k: ["leche","yogur","queso","mantequilla","nata","huevo","kefir","batido","cuajada","natillas","flan"] },
-  { id: "panaderia", name: "Pan y desayuno", c: "#a8743a", k: ["pan","tostada","galleta","cereal","cafe","te ","infusion","cacao","magdalena","bolleria","mermelada","colacao","croissant","bizcocho","miel"] },
-  { id: "despensa", name: "Despensa", c: "#6a7b3a", k: ["arroz","pasta","macarron","espagueti","fideo","harina","azucar","sal","aceite","vinagre","lenteja","garbanzo","alubia","atun","sardina","conserva","tomate frito","especia","pimenton","oregano","legumbre","caldo","sopa","mayonesa","ketchup","mostaza","aceituna","patatas fritas","frutos secos","chocolate","levadura"] },
-  { id: "bebidas", name: "Bebidas", c: "#2f7fb5", k: ["agua","zumo","refresco","cerveza","vino","coca","bebida","gaseosa","tonica","cava","sidra","leche de avena","bebida vegetal"] },
-  { id: "congelados", name: "Congelados", c: "#5a9fb8", k: ["congelad","helado","pizza","croqueta","guisante","empanadilla","hielo","varitas"] },
-  { id: "limpieza", name: "Limpieza y hogar", c: "#7d5fb2", k: ["lejia","detergente","suavizante","friegasuelos","lavavajillas","bolsa de basura","bolsas","estropajo","papel de cocina","servilleta","esponja","limpiador","ambientador","papel de aluminio","film","bombilla","pila","fregona","bayeta"] },
-  { id: "higiene", name: "Higiene", c: "#b5487f", k: ["champu","gel","pasta de dientes","dentifrico","cepillo","desodorante","papel higienico","compresa","tampon","panal","toallita","crema","jabon","colonia","maquinilla","cuchilla","algodon","tirita"] },
-  { id: "otros", name: "Otros", c: "#7c8a83", k: [] },
-];
-const AISLE_IDS = AISLES.map((a) => a.id);
-const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ñ/g, "n").trim();
-function guessAisle(name) {
-  const n = " " + norm(name) + " ";
-  let best = null, len = 0;
-  for (const a of AISLES) for (const k of a.k) if (n.includes(k) && k.length > len) { best = a.id; len = k.length; }
-  return best || "otros";
-}
+const MODULES = [gastos, viajes, calendario, citas, cupones];
 
 /* ---------- Utilidades ---------- */
-const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const cap = (s) => { s = String(s || "").trim().replace(/\s+/g, " "); return s ? s[0].toUpperCase() + s.slice(1) : s; };
-const initials = (n) => (n || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "?";
-const LS = {
-  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
-};
 function show(screen) {
   for (const s of ["loading", "setup", "welcome", "app"]) $("screen-" + s).hidden = s !== screen;
 }
+
+/* ---------- Pestañas ---------- */
+const VIEWS = { compra: null, gastos, viajes, calendario, citas };
+function route() {
+  if (!hid) return;
+  let v = location.hash.slice(1);
+  if (!(v in VIEWS)) v = LS.get("bretona.view") || "compra";
+  if (!(v in VIEWS)) v = "compra";
+  LS.set("bretona.view", v);
+  for (const k of Object.keys(VIEWS)) $("view-" + k).hidden = k !== v;
+  document.querySelectorAll(".tabbar [data-view]").forEach((a) => a.setAttribute("aria-current", a.dataset.view === v ? "page" : "false"));
+  VIEWS[v]?.onShow?.();
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
 let noteTimer;
 function note(msg, ms = 4000) {
   $("note").textContent = msg || "";
@@ -81,12 +75,14 @@ async function boot() {
   ]);
   F = { ...appM, ...authM, ...fsM };
   app = F.initializeApp(firebaseConfig);
+  ctx.F = F; ctx.app = app;
   auth = F.getAuth(app);
   try {
     fs = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) });
   } catch {
     fs = F.getFirestore(app);
   }
+  ctx.fs = fs;
 
   // Código de invitación en el enlace (#unir-BRT-XXXX-XXXX)
   const m = location.hash.match(/^#unir-(.+)$/i);
@@ -99,7 +95,7 @@ async function boot() {
       catch (e) { console.error(e); $("loading-msg").textContent = "No se ha podido iniciar sesión. Revisa que el acceso anónimo esté activado en Firebase (paso 3 del LEEME)."; }
       return;
     }
-    uid = user.uid;
+    uid = user.uid; ctx.uid = uid;
     try {
       const snap = await F.getDoc(F.doc(fs, "users", uid));
       const saved = snap.exists() ? snap.data() : null;
@@ -166,15 +162,18 @@ $("w-join").addEventListener("submit", async (e) => {
 
 /* ---------- Lista de la familia ---------- */
 function openHouse(id) {
-  hid = id;
+  hid = id; ctx.hid = id;
   show("app");
+  route();
+  for (const m of MODULES) m.start?.();
   render();
   unsubHouse?.(); unsubItems?.();
   unsubHouse = F.onSnapshot(F.doc(fs, "households", hid), (s) => {
     if (!s.exists()) return;
-    house = s.data();
+    house = s.data(); ctx.house = house;
     if (!house.members?.includes(uid)) { leftHouse(); return; }
     render(); renderFamily();
+    for (const m of MODULES) m.onHouse?.();
   }, (err) => {
     console.error(err);
     if (err.code === "permission-denied") leftHouse();
@@ -186,21 +185,17 @@ function openHouse(id) {
 }
 function leftHouse() {
   unsubHouse?.(); unsubItems?.();
+  for (const m of MODULES) m.stop?.();
   hid = null; house = null; items = [];
+  ctx.hid = null; ctx.house = null;
   F.setDoc(F.doc(fs, "users", uid), { hid: null }, { merge: true }).catch(() => {});
   $("dlg-family").open && $("dlg-family").close();
   show("welcome");
 }
 const itemsRef = () => F.collection(fs, "households", hid, "items");
 const itemRef = (id) => F.doc(fs, "households", hid, "items", id);
-const houseRef = () => F.doc(fs, "households", hid);
 const myName = () => house?.memberNames?.[uid] || LS.get("bretona.name") || "";
-const stores = () => (house?.stores || []);
 
-function failed(e) {
-  console.error(e);
-  note(e?.code === "permission-denied" ? "Ya no tienes acceso a esta lista." : "No se ha guardado. Revisa la conexión.");
-}
 
 async function addItem({ name, qty = "", store = "", aisle = null }) {
   name = cap(name).slice(0, 60); qty = String(qty || "").trim().slice(0, 12);
@@ -220,13 +215,6 @@ function flash(id) {
 }
 
 /* ---------- Pintar ---------- */
-function storeOptions(selected, { any = "Cualquier tienda", addNew = true } = {}) {
-  const list = [...stores()];
-  if (selected && !list.includes(selected)) list.push(selected);
-  return `<option value="">${esc(any)}</option>` +
-    list.map((s) => `<option value="${esc(s)}"${s === selected ? " selected" : ""}>${esc(s)}</option>`).join("") +
-    (addNew ? `<option value="__new">+ Nueva tienda…</option>` : "");
-}
 function visible(i) {
   if (filter === "all") return true;
   return (i.store || "") === filter || !i.store;
@@ -235,6 +223,8 @@ function visible(i) {
 function render() {
   if (!hid) return;
   if (filter !== "all" && !stores().includes(filter) && house) { filter = "all"; LS.set("bretona.filter", "all"); }
+  ctx.filter = filter;
+  cupones.renderStrip();
   const pendingAll = items.filter((i) => !i.done);
   const pending = pendingAll.filter(visible);
   const done = items.filter((i) => i.done && visible(i));
@@ -313,15 +303,6 @@ $("add-store").addEventListener("change", async (e) => {
     $("add-store").value = s || "";
   }
 });
-async function newStore() {
-  const s = cap(prompt("Nombre del supermercado o tienda:") || "").slice(0, 30);
-  if (!s) return "";
-  if (!stores().some((x) => norm(x) === norm(s))) {
-    await F.updateDoc(houseRef(), { stores: F.arrayUnion(s) }).catch(failed);
-    house = { ...house, stores: [...stores(), s] };
-  }
-  return stores().find((x) => norm(x) === norm(s)) || s;
-}
 $("filters").addEventListener("click", (e) => {
   const b = e.target.closest("[data-filter]"); if (!b) return;
   filter = b.dataset.filter; LS.set("bretona.filter", filter);
@@ -354,7 +335,16 @@ $("list").addEventListener("click", async (e) => {
   }
   const li = t.closest(".item"); if (!li) return;
   const it = items.find((i) => i.id === li.dataset.id); if (!it) return;
-  if (act === "toggle") F.updateDoc(itemRef(it.id), { done: !it.done, doneAt: !it.done ? Date.now() : null }).catch(failed);
+  if (act === "toggle") {
+    // Al marcar como comprado se guarda en el historial (para Gastos); al desmarcar se quita.
+    const now = Date.now();
+    const b = F.writeBatch(fs);
+    b.update(itemRef(it.id), { done: !it.done, doneAt: !it.done ? now : null });
+    const pRef = F.doc(fs, "households", hid, "purchases", it.id);
+    if (!it.done) b.set(pRef, { name: it.name, qty: it.qty || "", store: it.store || "", aisle: it.aisle || "otros", boughtAt: now, boughtBy: uid });
+    else b.delete(pRef);
+    b.commit().catch(failed);
+  }
   if (act === "edit") openEdit(it);
 });
 
@@ -396,20 +386,6 @@ $("photo-input").addEventListener("change", async (e) => {
 });
 $("p-cancel").addEventListener("click", () => $("dlg-photo").close());
 
-async function shrink(file, max = 1600) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
-    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
-    const c = document.createElement("canvas");
-    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
-    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    const dataUrl = c.toDataURL("image/jpeg", 0.85);
-    return { preview: dataUrl, base64: dataUrl.split(",")[1] };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 const PHOTO_PROMPT = `Eres el asistente de una lista de la compra familiar en España.
 Mira la imagen: puede ser una lista escrita a mano, una nota del móvil, un ticket de compra, una receta, un folleto, una nevera o una despensa.
@@ -436,39 +412,11 @@ async function readPhoto(file) {
   try { img = await shrink(file); $("p-img").src = img.preview; }
   catch { $("p-status").textContent = "No se puede abrir esta imagen. Prueba con otra foto (JPG o PNG)."; return; }
 
-  let text = null, lastErr = null;
-  try {
-    if (!F.getAI) Object.assign(F, await import(FB + "firebase-ai.js"));
-    const ai = F.getAI(app, { backend: new F.GoogleAIBackend() });
-    for (const model of geminiModels) {
-      try {
-        const m = F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: 0.1 } });
-        const r = await m.generateContent([PHOTO_PROMPT, { inlineData: { data: img.base64, mimeType: "image/jpeg" } }]);
-        text = r.response.text();
-        break;
-      } catch (e) { lastErr = e; console.warn("Modelo", model, e); }
-    }
-  } catch (e) { lastErr = e; }
-
+  let data;
+  try { data = await askGemini(PHOTO_PROMPT, img.base64); }
+  catch (e) { if ($("dlg-photo").open) $("p-status").textContent = e.message; return; }
   if (!$("dlg-photo").open) return; // cancelado mientras leía
-  if (text == null) {
-    const msg = String(lastErr?.message || lastErr || "");
-    $("p-status").textContent = !navigator.onLine
-      ? "Sin conexión. Para leer fotos hace falta internet."
-      : /api-not-enabled|not enabled|PERMISSION_DENIED|403/i.test(msg)
-        ? "La lectura de fotos no está activada en Firebase (paso 5 del LEEME)."
-        : /quota|429|RESOURCE_EXHAUSTED/i.test(msg)
-          ? "Se ha llegado al límite gratuito de fotos por ahora. Prueba dentro de un rato."
-          : "No se ha podido leer la foto. Prueba otra vez o con más luz.";
-    return;
-  }
-
-  let found = [];
-  try {
-    const clean = text.replace(/^```(?:json)?\s*|\s*```$/g, "");
-    const data = JSON.parse(clean);
-    found = Array.isArray(data) ? data : (data.productos || data.items || []);
-  } catch { found = []; }
+  const found = !data ? [] : Array.isArray(data) ? data : (data.productos || data.items || []);
   const onList = new Set(items.filter((i) => !i.done).map((i) => norm(i.name)));
   const seen = new Set();
   photoFound = found
@@ -523,9 +471,7 @@ function renderFamily() {
   }).join("");
   $("f-code").textContent = house.inviteCode || "";
   $("f-share").hidden = !navigator.share;
-  $("f-stores").innerHTML = stores().length
-    ? stores().map((s) => `<li>${esc(s)}<button data-del-store="${esc(s)}" aria-label="Quitar ${esc(s)}">×</button></li>`).join("")
-    : `<li class="muted" style="background:none;padding:0">Aún no hay tiendas.</li>`;
+  renderStores();
   if (document.activeElement !== $("f-name")) $("f-name").value = names[uid] || "";
 }
 function inviteText() {
@@ -545,10 +491,65 @@ $("f-store-form").addEventListener("submit", async (e) => {
   if (!stores().some((x) => norm(x) === norm(s))) await F.updateDoc(houseRef(), { stores: F.arrayUnion(s) }).catch(failed);
   $("f-store-name").value = "";
 });
+/* ---------- Tiendas: cambiar nombre, unir duplicadas y borrar ---------- */
+let storeEdit = null; // { name, mode: "edit" | "delete" }
+function renderStores() {
+  if (storeEdit && !stores().includes(storeEdit.name)) storeEdit = null;
+  if (storeEdit?.mode === "edit" && document.activeElement?.id === "f-store-rename") return; // no pisar lo que se escribe
+  $("f-stores").innerHTML = stores().length
+    ? stores().map((s) => {
+      if (storeEdit?.name === s && storeEdit.mode === "edit") return `<li class="store-edit">
+          <form class="row" data-rename="${esc(s)}"><input id="f-store-rename" value="${esc(s)}" maxlength="30" aria-label="Nuevo nombre de ${esc(s)}">
+          <button class="btn" type="submit">Guardar</button><button class="link" type="button" data-store-cancel>Cancelar</button></form>
+          <span class="muted small-print">Si escribes el nombre de otra tienda de la lista, se unen en una.</span></li>`;
+      if (storeEdit?.name === s && storeEdit.mode === "delete") return `<li class="store-edit"><span class="confirm">¿Quitar ${esc(s)}? Lo pendiente de la lista quedará sin tienda.
+          <button class="btn danger-btn" type="button" data-del-yes="${esc(s)}">Quitar</button><button class="link" type="button" data-store-cancel>Cancelar</button></span></li>`;
+      return `<li><button class="store-name" data-edit-store="${esc(s)}" aria-label="Cambiar el nombre de ${esc(s)}">${esc(s)}</button><button data-del-store="${esc(s)}" aria-label="Quitar ${esc(s)}">×</button></li>`;
+    }).join("")
+    : `<li class="muted" style="background:none;padding:0">Aún no hay tiendas.</li>`;
+  if (storeEdit?.mode === "edit") { const i = $("f-store-rename"); i.focus(); i.select(); }
+}
 $("f-stores").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-del-store]"); if (!b) return;
-  F.updateDoc(houseRef(), { stores: F.arrayRemove(b.dataset.delStore) }).catch(failed);
+  const q = (sel) => e.target.closest(sel);
+  if (q("[data-edit-store]")) { storeEdit = { name: q("[data-edit-store]").dataset.editStore, mode: "edit" }; renderStores(); return; }
+  if (q("[data-del-store]")) { storeEdit = { name: q("[data-del-store]").dataset.delStore, mode: "delete" }; renderStores(); return; }
+  if (q("[data-store-cancel]")) { storeEdit = null; renderStores(); return; }
+  if (q("[data-del-yes]")) { const s = q("[data-del-yes]").dataset.delYes; storeEdit = null; renameStore(s, ""); }
 });
+$("f-stores").addEventListener("submit", (e) => {
+  const f = e.target.closest("[data-rename]"); if (!f) return;
+  e.preventDefault();
+  const from = f.dataset.rename, to = cap($("f-store-rename").value).slice(0, 30);
+  storeEdit = null;
+  if (!to || to === from) { renderStores(); return; }
+  renameStore(from, to);
+});
+
+// Cambia el nombre de una tienda (o la une con otra, o la quita si `to` está vacío)
+// en la lista de tiendas y en todos los productos, tickets e historial que la usan.
+async function renameStore(from, to) {
+  const existing = to ? stores().find((x) => x !== from && norm(x) === norm(to)) : null;
+  const target = to ? (existing || to) : "";
+  const merging = !!existing;
+  const next = !to || merging ? stores().filter((x) => x !== from) : stores().map((x) => (x === from ? target : x));
+  try {
+    const colls = to ? ["items", "tickets", "purchases"] : ["items"];
+    for (const c of colls) {
+      let qy = F.query(F.collection(fs, "households", hid, c), F.where("store", "==", from));
+      const snap = await F.getDocs(qy);
+      let docs = snap.docs;
+      if (!to) docs = docs.filter((d) => !d.data().done); // al quitar: solo lo pendiente
+      for (let i = 0; i < docs.length; i += 400) {
+        const b = F.writeBatch(fs);
+        for (const d of docs.slice(i, i + 400)) b.update(d.ref, { store: target });
+        await b.commit();
+      }
+    }
+    await F.updateDoc(houseRef(), { stores: next });
+    if (filter === from) { filter = target || "all"; LS.set("bretona.filter", filter); }
+    toast(!to ? `${from} quitada` : merging ? `${from} unida con ${target}` : `Ahora se llama ${target}`);
+  } catch (err) { failed(err); }
+}
 $("f-name-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const n = cap($("f-name").value).slice(0, 30); if (!n) return;

@@ -28,7 +28,8 @@ service cloud.firestore {
           && request.resource.data.memberNames.diff(resource.data.memberNames).affectedKeys().hasOnly([request.auth.uid]));
       allow delete: if false;
 
-      match /items/{itemId} {
+      // Lista, historial de compras, tickets, viajes y citas: solo la familia.
+      match /{coll}/{docId} {
         allow read, write: if isMember(hid);
       }
     }

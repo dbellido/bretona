@@ -58,6 +58,13 @@ El nivel gratuito tiene un límite de peticiones por minuto y por día, de sobra
 - Funciona sin cobertura dentro del súper: los cambios se envían al recuperar la conexión. Leer fotos sí necesita internet.
 - "Lo de siempre": lo que habéis comprado aparece abajo para volver a añadirlo con un toque.
 
+## Pestañas
+- **Compra**: la lista compartida.
+- **Gastos**: haz una foto al ticket y se apunta la tienda, la fecha y el total. Lo que marcáis como comprado en la lista también queda guardado, para ver qué compráis y cada cuánto.
+- **Viajes**: cada viaje con sus reservas (vuelos, hotel, coche…) y el plan de cada día.
+- **Calendario**: vuestro calendario compartido de Google dentro de la app. Se conecta una vez pegando el ID del calendario (la pestaña explica dónde encontrarlo).
+- **Citas**: las citas médicas de toda la familia, con un botón para pasarlas a Google Calendar y que os avise.
+
 ## Si algo falla
 - **"Falta conectar la base de datos"**: revisa el paso 2.
 - **"No se ha podido iniciar sesión"**: revisa el paso 3.

@@ -75,6 +75,7 @@
     </div>
   </header>
 
+  <div id="view-compra" class="view">
   <div class="sticky">
     <div class="wrap sticky-in">
       <form id="add-form" class="add" autocomplete="off">
@@ -95,9 +96,23 @@
     </div>
   </div>
 
+  <div class="wrap" id="coupons-strip"></div>
   <main class="wrap" id="list"></main>
   <div class="wrap"><div class="chips-title" id="chips-title" hidden>Lo de siempre</div><div class="chips" id="chips"></div></div>
+  </div>
+  <main id="view-gastos" class="view wrap" hidden></main>
+  <main id="view-viajes" class="view wrap" hidden></main>
+  <main id="view-calendario" class="view wrap" hidden></main>
+  <main id="view-citas" class="view wrap" hidden></main>
+  <nav class="tabbar" aria-label="Secciones">
+    <a href="#compra" data-view="compra"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.2 10.2a1.5 1.5 0 0 0 1.5 1.2h8.4a1.5 1.5 0 0 0 1.5-1.1L20.5 8H6.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.5" fill="currentColor"/><circle cx="17" cy="19.5" r="1.5" fill="currentColor"/></svg><span>Compra</span></a>
+    <a href="#gastos" data-view="gastos"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V12M10 20V6M15 20v-9M20 20V4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Gastos</span></a>
+    <a href="#viajes" data-view="viajes"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 13.5l7-2 4-7.5 1.8.4-1.6 7 5.3-1.4 1.5-2.2 1.4.3-.8 3.6.8 3.6-1.4.3-1.5-2.2-5.3-1.4 1.6 7-1.8.4-4-7.5-7-2z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg><span>Viajes</span></a>
+    <a href="#calendario" data-view="calendario"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="7" y="13" width="3" height="3" rx=".6" fill="currentColor"/></svg><span>Calendario</span></a>
+    <a href="#citas" data-view="citas"><svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.6-7.5 10-7.5 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10.5v4M10 12.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Citas</span></a>
+  </nav>
 </section>
+<div id="toast" class="toast" role="status" hidden></div>
 
 <!-- Editar producto -->
 <dialog id="dlg-edit" class="sheet">
