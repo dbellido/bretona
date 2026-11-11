@@ -9,8 +9,10 @@ import * as viajes from "./viajes.js";
 import * as calendario from "./calendario.js";
 import * as citas from "./citas.js";
 import * as cupones from "./cupones.js";
+import * as tareas from "./tareas.js";
+import * as pisosM from "./pisos.js";
 
-const MODULES = [gastos, viajes, calendario, citas, cupones];
+const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM];
 
 /* ---------- Utilidades ---------- */
 function show(screen) {
@@ -18,7 +20,8 @@ function show(screen) {
 }
 
 /* ---------- Pestañas ---------- */
-const VIEWS = { compra: null, gastos, viajes, calendario, citas };
+const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM };
+const IN_MORE = ["gastos", "viajes", "pisos"];
 function route() {
   if (!hid) return;
   let v = location.hash.slice(1);
@@ -26,11 +29,24 @@ function route() {
   if (!(v in VIEWS)) v = "compra";
   LS.set("bretona.view", v);
   for (const k of Object.keys(VIEWS)) $("view-" + k).hidden = k !== v;
-  document.querySelectorAll(".tabbar [data-view]").forEach((a) => a.setAttribute("aria-current", a.dataset.view === v ? "page" : "false"));
+  document.querySelectorAll(".tabbar [data-view]").forEach((a) => a.setAttribute("aria-current", (a.dataset.view === v || (a.dataset.view === "mas" && IN_MORE.includes(v))) ? "page" : "false"));
+  document.querySelectorAll("#dlg-more [data-view]").forEach((a) => a.setAttribute("aria-current", a.dataset.view === v ? "page" : "false"));
+  if ($("dlg-more").open) $("dlg-more").close();
   VIEWS[v]?.onShow?.();
   window.scrollTo(0, 0);
 }
 window.addEventListener("hashchange", route);
+$("tab-mas").addEventListener("click", () => $("dlg-more").showModal());
+$("more-close").addEventListener("click", () => $("dlg-more").close());
+document.querySelectorAll("#dlg-more [data-view]").forEach((l) => l.addEventListener("click", () => $("dlg-more").close()));
+$("dlg-more").addEventListener("click", (e) => { if (e.target === $("dlg-more")) $("dlg-more").close(); });
+// Avisos en la barra: tareas para hoy y pisos por votar.
+function badges() {
+  const setB = (id, n) => { $(id).textContent = n > 9 ? "9+" : n; $(id).hidden = !n; };
+  const t = tareas.myDueCount(), p = pisosM.myPendingCount();
+  setB("badge-tareas", t); setB("badge-pisos", p); setB("badge-mas", p);
+}
+ctx.onTasks = badges; ctx.onPisos = badges;
 let noteTimer;
 function note(msg, ms = 4000) {
   $("note").textContent = msg || "";

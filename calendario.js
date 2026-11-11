@@ -48,6 +48,7 @@ export function onShow() { refreshFeed(); render(true); }
 export function onHouse() { refreshFeed(); if (!$("view-calendario").hidden) render(); }
 export function stop() { changing = false; }
 onFeed(() => { if (!$("view-calendario").hidden) render(true); });
+ctx.onOverrides = () => { if (!$("view-calendario").hidden && view === "lista") render(true); };
 
 function embedUrl(id) {
   const p = new URLSearchParams({ src: id, ctz: "Europe/Madrid", hl: "es", mode, wkst: "2", showTitle: "0", showPrint: "0", showCalendars: "0", showTz: "0", showNav: "1", showDate: "1", showTabs: "0" });
@@ -87,7 +88,7 @@ function listHtml() {
     <section class="ev-day">
       <h3>${d === today ? "Hoy" : d === addDays(today, 1) ? "Mañana" : ""} <span>${esc(fmtDayLong(d))}</span></h3>
       <ul class="ev-list">${list.map((e) => {
-        const who = detectPerson(e.title + " " + e.description, people);
+        const who = ctx.calOverrides?.get(String(e.id).split("_")[0])?.who || detectPerson(e.title + " " + e.description, people);
         const c = who ? personColor(who, people) : -1;
         return `<li class="ev${c >= 0 ? " pc pc-" + c : ""}">
           <span class="ev-time">${e.allDay ? "Todo el día" : esc(e.time)}</span>

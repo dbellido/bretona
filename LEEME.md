@@ -63,7 +63,9 @@ El nivel gratuito tiene un límite de peticiones por minuto y por día, de sobra
 - **Gastos**: haz una foto al ticket y se apunta la tienda, la fecha y el total. Lo que marcáis como comprado en la lista también queda guardado, para ver qué compráis y cada cuánto.
 - **Viajes**: cada viaje con sus reservas (vuelos, hotel, coche…) y el plan de cada día.
 - **Calendario**: vuestro calendario compartido de Google dentro de la app. Se conecta una vez pegando el ID del calendario (la pestaña explica dónde encontrarlo).
-- **Citas**: las citas médicas de toda la familia, con un botón para pasarlas a Google Calendar y que os avise.
+- **Tareas**: tareas de casa con persona, fecha y repetición (cada día, semana, 2 semanas o mes).
+- **Citas**: las citas médicas de toda la familia. Las del calendario de Google salen solas; con ••• se dice para quién son (por ejemplo, Gael) o se ocultan si no son médicas.
+- **Más → Pisos (beta)**: anuncios de las alertas por correo de idealista, Fotocasa y yaencontré. Cada miembro vota; si todos dicen «Me gusta», pasa a Favoritos.
 
 ## Leer el calendario de Google (opcional)
 Para que los eventos salgan como lista dentro de BRETONA y las citas médicas aparezcan solas en Citas:
@@ -74,6 +76,13 @@ Para que los eventos salgan como lista dentro de BRETONA y las citas médicas ap
 5. Copia la **URL de la aplicación web** (acaba en `/exec`) y pégala en BRETONA → Calendario → Configurar.
 
 Cualquiera con esa dirección puede ver los eventos del calendario, igual que con la "dirección secreta" de Google Calendar: no la compartas fuera de la familia.
+
+## Pisos: alertas de los portales (beta)
+1. En idealista, Fotocasa y yaencontré, haced una búsqueda con vuestros criterios y guardadla como **alerta por correo**, con el Gmail donde está el programa de Google (o reenviad a ese Gmail las alertas que os lleguen a otro correo).
+2. Pega en el programa de Google la versión nueva de `calendario-google.gs` (manteniendo tu ID de calendario), ejecuta `probarPisos` para dar permiso de lectura del correo, y en **Implementar → Gestionar implementaciones → ✏️ → Versión: Nueva versión → Implementar**. Así la dirección no cambia.
+3. BRETONA lee esos correos al abrir Pisos (o con «Actualizar»).
+
+BRETONA no entra en los portales: solo lee los correos de alerta que os mandan ellos.
 
 ## Si algo falla
 - **"Falta conectar la base de datos"**: revisa el paso 2.
