@@ -65,6 +65,7 @@ El nivel gratuito tiene un límite de peticiones por minuto y por día, de sobra
 - **Calendario**: vuestro calendario compartido de Google dentro de la app. Se conecta una vez pegando el ID del calendario (la pestaña explica dónde encontrarlo).
 - **Tareas**: tareas de casa con persona, fecha y repetición (cada día, semana, 2 semanas o mes).
 - **Citas**: las citas médicas de toda la familia. Las del calendario de Google salen solas; con ••• se dice para quién son (por ejemplo, Gael) o se ocultan si no son médicas.
+- **Más → Menú**: comidas de la semana propuestas por Gemini (equilibradas, variadas y fáciles), con receta, favoritas que salen más a menudo, descartadas que no vuelven y un botón para pasar los ingredientes a la lista de la compra.
 - **Más → Pisos (beta)**: anuncios de las alertas por correo de idealista, Fotocasa y yaencontré. Cada miembro vota; si todos dicen «Me gusta», pasa a Favoritos.
 
 ## Leer el calendario de Google (opcional)
@@ -81,6 +82,8 @@ Cualquiera con esa dirección puede ver los eventos del calendario, igual que co
 1. En idealista, Fotocasa y yaencontré, haced una búsqueda con vuestros criterios y guardadla como **alerta por correo**, con el Gmail donde está el programa de Google (o reenviad a ese Gmail las alertas que os lleguen a otro correo).
 2. Pega en el programa de Google la versión nueva de `calendario-google.gs` (manteniendo tu ID de calendario), ejecuta `probarPisos` para dar permiso de lectura del correo, y en **Implementar → Gestionar implementaciones → ✏️ → Versión: Nueva versión → Implementar**. Así la dirección no cambia.
 3. BRETONA lee esos correos al abrir Pisos (o con «Actualizar»).
+
+Cada piso muestra el tiempo en transporte público hasta Nuevos Ministerios o Chamartín (saliendo a las 8:30 de un laborable). Los de más de 40 minutos van a «No cumplen». Se puede cambiar en Criterios. Como las alertas no suelen dar la dirección exacta, el tiempo es aproximado: si la sabéis, ponedla en ••• del piso.
 
 BRETONA no entra en los portales: solo lee los correos de alerta que os mandan ellos.
 

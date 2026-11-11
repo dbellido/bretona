@@ -220,7 +220,15 @@
   </div>
 </dialog>
 
-<script type="module" src="app.js"></script>
+<script>
+  // Si la app no arranca (por ejemplo, porque falta un archivo en GitHub), avisar en vez de quedarse colgada.
+  function bretonaFallo(msg) {
+    var m = document.getElementById("loading-msg");
+    if (m && !document.getElementById("screen-loading").hidden) m.textContent = msg;
+  }
+  setTimeout(function () { bretonaFallo("BRETONA está tardando demasiado. Si no abre, puede que falte algún archivo en GitHub: vuelve a subirlos todos."); }, 15000);
+</script>
+<script type="module" src="app.js" onerror="bretonaFallo('No se ha podido cargar BRETONA: falta algún archivo en GitHub o hay uno antiguo. Vuelve a subir todos los archivos del ZIP.')"></script>
 <script>
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));

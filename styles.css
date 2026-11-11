@@ -406,3 +406,44 @@ input:disabled,select:disabled,textarea:disabled{opacity:.6}
 .vote.no{text-decoration:line-through}
 .vote-btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
 .vote-btns .danger-btn{padding:11px 16px;font-size:15px}
+.transit{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;color:var(--accent);margin-top:2px}
+.transit b{font-variant-numeric:tabular-nums}
+.transit small{color:var(--muted);font-size:12.5px}
+.transit.over{color:var(--tomato)}
+.more-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+
+/* Menú */
+.week-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px;margin-bottom:12px}
+.week-nav > div{display:flex;flex-direction:column;align-items:center;text-align:center;min-width:0}
+.week-nav .icon-btn:disabled{opacity:.3}
+.dishes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.dish{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.dish.today{border-color:var(--accent);box-shadow:inset 4px 0 0 var(--accent)}
+.dish.loading{opacity:.7}
+.empty-dish{flex-direction:row;justify-content:space-between;align-items:center}
+.dish-head{display:flex;justify-content:space-between;align-items:center}
+.dish-day{font-size:12.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.dish-name{font-family:var(--display);font-weight:800;font-size:19px;line-height:1.2;margin:0;text-wrap:balance}
+.dish-sum{margin:0;color:var(--muted);font-size:14px}
+.dish-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.tag{font-size:12px;font-weight:600;background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:1px 9px;color:var(--muted)}
+.tag.fav{color:#a87400;border-color:#e8c766}
+.fav-btn{border:0;background:none;color:var(--muted);width:40px;height:40px;border-radius:10px;display:grid;place-items:center;cursor:pointer;margin:-8px -8px -8px 0}
+.fav-btn.on{color:#e0a100}
+.fav-btn:focus-visible{outline:2px solid var(--accent)}
+.dish-actions{display:flex;flex-wrap:wrap;gap:2px 16px;margin-top:4px}
+.link.danger{color:var(--tomato)}
+.recipe{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
+.recipe h4{margin:6px 0;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.ingr{list-style:none;margin:0 0 6px;padding:0;display:flex;flex-direction:column;gap:3px;font-size:14px}
+.ingr li{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted var(--line);padding-bottom:3px}
+.recipe .steps{font-size:14px;gap:6px}
+.menu-foot{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.menu-lists{display:flex;gap:16px;margin-top:18px}
+.recipe-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.recipe-list li{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:14px}
+#dlg-menu-shop{display:flex;flex-direction:column;gap:10px;padding:18px max(18px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-left,0px))}
+#dlg-menu-shop:not([open]){display:none}
+#ms-list li{gap:10px}
+.ms-name{flex:1;font-weight:500}
+.ms-qty{color:var(--muted);font-size:13px;text-align:right}
