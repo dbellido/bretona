@@ -173,3 +173,42 @@ export async function newStore() {
 }
 // Lee los campos de un formulario por id: { campo: valor }
 export const val = (id) => ($(id).value || "").trim();
+
+/* ---------- Personas y colores ---------- */
+export const PERSON_COLORS = 8;
+export const personKey = (n) => norm(n).replace(/[^a-z0-9]/g, "");
+// Todas las personas conocidas: miembros de la familia y otras que se hayan añadido (niños, abuelos…).
+export function knownPeople(extra = []) {
+  const seen = new Map();
+  const add = (n) => { const k = personKey(n); if (k && !seen.has(k)) seen.set(k, cap(n)); };
+  for (const m of ctx.house?.members || []) add(ctx.house?.memberNames?.[m]);
+  for (const n of ctx.house?.people || []) add(n);
+  for (const n of extra) add(n);
+  return [...seen.values()];
+}
+// Color de una persona: el elegido a mano o, si no, el primero libre en orden.
+export function personColor(name, people = knownPeople([name])) {
+  const k = personKey(name);
+  if (!k) return -1;
+  const chosen = ctx.house?.personColors || {};
+  if (Number.isInteger(chosen[k])) return chosen[k] % PERSON_COLORS;
+  const used = new Set(Object.values(chosen));
+  let i = 0;
+  for (const p of people) {
+    const pk = personKey(p);
+    if (Number.isInteger(chosen[pk])) continue;
+    while (used.has(i % PERSON_COLORS) && used.size < PERSON_COLORS) i++;
+    if (pk === k) return i % PERSON_COLORS;
+    used.add(i % PERSON_COLORS); i++;
+  }
+  return i % PERSON_COLORS;
+}
+// Busca en un texto el nombre de alguien de la familia ("Pediatra Lucas" → "Lucas").
+export function detectPerson(text, people = knownPeople()) {
+  const t = " " + norm(text).replace(/[^a-z0-9]+/g, " ") + " ";
+  for (const p of [...people].sort((a, b) => b.length - a.length)) {
+    const w = norm(p).replace(/[^a-z0-9]+/g, " ").trim();
+    if (w && t.includes(" " + w + " ")) return p;
+  }
+  return "";
+}

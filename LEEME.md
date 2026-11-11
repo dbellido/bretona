@@ -65,6 +65,16 @@ El nivel gratuito tiene un límite de peticiones por minuto y por día, de sobra
 - **Calendario**: vuestro calendario compartido de Google dentro de la app. Se conecta una vez pegando el ID del calendario (la pestaña explica dónde encontrarlo).
 - **Citas**: las citas médicas de toda la familia, con un botón para pasarlas a Google Calendar y que os avise.
 
+## Leer el calendario de Google (opcional)
+Para que los eventos salgan como lista dentro de BRETONA y las citas médicas aparezcan solas en Citas:
+1. En el ordenador, abre https://script.google.com con la cuenta de Google que ve el calendario de la familia → **Nuevo proyecto**.
+2. Borra lo que haya y pega el contenido de `calendario-google.gs`. Cambia `PEGA_AQUI_EL_ID_DEL_CALENDARIO` por el ID del calendario.
+3. Guarda (icono del disquete). Arriba elige la función `probar` → **Ejecutar** → autoriza el acceso (Google avisará de que la app no está verificada: **Configuración avanzada → Ir a … (no seguro)**; es tu propio programa).
+4. **Implementar → Nueva implementación** → tipo **Aplicación web** → Ejecutar como: **Yo** → Quién tiene acceso: **Cualquier usuario** → Implementar.
+5. Copia la **URL de la aplicación web** (acaba en `/exec`) y pégala en BRETONA → Calendario → Configurar.
+
+Cualquiera con esa dirección puede ver los eventos del calendario, igual que con la "dirección secreta" de Google Calendar: no la compartas fuera de la familia.
+
 ## Si algo falla
 - **"Falta conectar la base de datos"**: revisa el paso 2.
 - **"No se ha podido iniciar sesión"**: revisa el paso 3.

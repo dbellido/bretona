@@ -1,7 +1,7 @@
 // Cupones de descuento: dentro de la pestaña Compra.
 import {
   ctx, $, esc, cap, norm, toast, failed, sub, subDoc, stores, houseRef,
-  ymd, daysBetween, fmtDate, relDay, euro, parseEuro, storeOptions, newStore,
+  ymd, daysBetween, fmtDate, relDay, euro, parseEuro, storeOptions, newStore, shrink, askGemini,
 } from "./core.js";
 
 let coupons = [], unsub = null;
@@ -14,7 +14,11 @@ document.body.insertAdjacentHTML("beforeend", `
     <button class="icon-btn" id="cp-close" aria-label="Cerrar">×</button>
   </div>
   <div id="cp-list"></div>
-  <button class="btn wide" id="cp-new">Añadir cupón</button>
+  <div class="row">
+    <button class="btn" id="cp-photo" type="button" style="flex:1">Foto del cupón</button>
+    <button class="btn ghost" id="cp-new" type="button" style="flex:1">Añadir a mano</button>
+  </div>
+  <input type="file" id="cp-photo-input" accept="image/*" hidden>
 </dialog>
 
 <dialog id="dlg-coupon" class="sheet">
@@ -27,6 +31,7 @@ document.body.insertAdjacentHTML("beforeend", `
     <label class="field"><span>Tienda</span><select id="cp-store"></select></label>
     <label class="field"><span>Qué es</span><input id="cp-desc" maxlength="80" placeholder="3 € en compras de más de 30 €"></label>
     <label class="field"><span>Código (opcional)</span><input id="cp-code" maxlength="40" placeholder="Para enseñarlo en caja" autocapitalize="characters" spellcheck="false"></label>
+    <p class="muted small-print" id="cp-status" hidden></p>
     <p class="note" id="cp-msg"></p>
     <div class="sheet-actions">
       <button class="link danger" type="button" id="cp-delete" hidden>Borrar</button>
@@ -112,6 +117,7 @@ $("dlg-coupons").addEventListener("click", async (e) => {
   if (e.target === $("dlg-coupons")) { $("dlg-coupons").close(); return; }
   const q = (s) => e.target.closest(s);
   if (q("#cp-new")) return openCoupon(null);
+  if (q("#cp-photo")) { $("cp-photo-input").click(); return; }
   if (q("#cp-old")) { showOld = !showOld; renderList(); return; }
   if (q("[data-cp-edit]")) return openCoupon(coupons.find((c) => c.id === q("[data-cp-edit]").dataset.cpEdit));
   if (q("[data-cp-use]")) {
@@ -135,6 +141,7 @@ function openCoupon(c) {
   $("cp-store").innerHTML = storeOptions(def, { any: "Cualquier tienda" });
   $("cp-desc").value = c?.desc || ""; $("cp-code").value = c?.code || "";
   $("cp-msg").textContent = "";
+  $("cp-status").hidden = true;
   $("cp-delete").hidden = !c;
   $("dlg-coupon").showModal();
 }
@@ -157,4 +164,44 @@ $("cp-delete").addEventListener("click", () => {
   if (editingId) ctx.F.deleteDoc(subDoc("coupons", editingId)).catch(failed);
   editingId = null;
   $("dlg-coupon").close();
+});
+
+/* ---------- Foto del cupón ---------- */
+const COUPON_PROMPT = `Esta imagen es un cupón, vale o cheque descuento de una tienda o supermercado en España (puede ser papel o una captura del móvil).
+Responde SOLO con JSON con esta forma exacta:
+{"descuento":3,"caducidad":"2026-12-31","tienda":"Mercadona","descripcion":"3 € en compras de más de 30 €","codigo":"ABC123"}
+Reglas:
+- "descuento": el importe en euros como número con punto decimal. Si el descuento es un porcentaje, pon null y explícalo en "descripcion".
+- "caducidad": la fecha hasta la que vale, en formato AAAA-MM-DD. Si no se ve, "".
+- "tienda": nombre comercial de la tienda. Tiendas que ya usa esta familia: {TIENDAS}. Si es una de ellas, escríbela exactamente igual. Si no se sabe, "".
+- "descripcion": corta, en español, con las condiciones importantes (compra mínima, producto…).
+- "codigo": el código del cupón si aparece en texto o números (no inventes). Si no hay, "".`;
+
+$("cp-photo-input").addEventListener("change", async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  openCoupon(null);
+  $("cp-title").textContent = "Cupón desde foto";
+  const st = $("cp-status");
+  st.hidden = false; st.innerHTML = '<span class="spinner"></span>Leyendo el cupón…';
+  try {
+    const img = await shrink(file, 2000);
+    const d = await askGemini(COUPON_PROMPT.replace("{TIENDAS}", stores().join(", ") || "ninguna"), img.base64);
+    if (!$("dlg-coupon").open) return;
+    if (!d) throw new Error("No he sabido leer el cupón.");
+    const amt = typeof d.descuento === "number" ? d.descuento : parseEuro(d.descuento);
+    if (amt != null && amt > 0) $("cp-amount").value = amt.toFixed(2).replace(".", ",");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d.caducidad || "")) $("cp-exp").value = d.caducidad;
+    let store = cap(d.tienda || "");
+    const known = stores().find((s) => norm(s) === norm(store) || (store && norm(store).includes(norm(s))));
+    if (known) store = known;
+    $("cp-store").innerHTML = storeOptions(store, { any: "Cualquier tienda" });
+    $("cp-desc").value = cap(d.descripcion || "").slice(0, 80);
+    $("cp-code").value = String(d.codigo || "").slice(0, 40);
+    const missing = [!$("cp-amount").value && "el descuento", !$("cp-exp").value && "la caducidad"].filter(Boolean);
+    st.textContent = missing.length ? `Revisa los datos. No he encontrado ${missing.join(" ni ")}.` : "Revisa los datos y pulsa Guardar.";
+  } catch (err) {
+    if ($("dlg-coupon").open) st.textContent = (err.message || "No se ha podido leer la foto.") + " Puedes rellenarlo a mano.";
+  }
 });

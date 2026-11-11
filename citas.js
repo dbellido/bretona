@@ -1,8 +1,10 @@
-// Pestaña Citas médicas: las citas de toda la familia, próximas y pasadas.
+// Pestaña Citas médicas: las de toda la familia, metidas a mano o leídas del calendario de Google.
 import {
-  ctx, $, esc, cap, norm, failed, sub, subDoc, memberName,
+  ctx, $, esc, cap, norm, failed, sub, subDoc, houseRef,
   ymd, parseYmd, fmtDayLong, relDay, daysBetween, calLink, mapsLink,
+  knownPeople, personColor, personKey, detectPerson,
 } from "./core.js";
+import { feedState, onFeed, refreshFeed, isMedical } from "./feed.js";
 
 let appts = [], unsub = null;
 let who = "";            // filtro por persona ("" = todos)
@@ -46,34 +48,44 @@ export function start() {
   }, (e) => console.error(e));
 }
 export function stop() { unsub?.(); unsub = null; appts = []; }
-export function onShow() { render(); }
-export function onHouse() { render(); }
+export function onShow() { refreshFeed(); render(); }
+export function onHouse() { refreshFeed(); render(); }
+onFeed(() => render());
 
-function people() {
-  const seen = new Map();
-  for (const n of Object.values(ctx.house?.memberNames || {})) if (n) seen.set(norm(n), n);
-  for (const a of appts) if (a.who && !seen.has(norm(a.who))) seen.set(norm(a.who), a.who);
-  return [...seen.values()];
-}
+const people = () => knownPeople(appts.map((a) => a.who));
 const eventTitle = (a) => `${a.spec}${a.who ? " · " + a.who : ""}`;
 const details = (a) => [a.doc && "Médico/a: " + a.doc, a.reason && "Motivo: " + a.reason, a.notes].filter(Boolean).join("\n");
 
-function card(a, past) {
+// Citas leídas del calendario, sin repetir las que ya están metidas a mano
+// (por ejemplo, las que se pasaron al calendario con el botón "Al calendario").
+function calendarAppts(ppl) {
+  const evs = feedState().events || [];
+  return evs.filter(isMedical).filter((e) => !appts.some((a) =>
+    a.date === e.date && ((a.time && a.time === e.time) || norm(e.title).includes(norm(a.spec)))))
+    .map((e) => ({
+      id: "cal:" + e.id, fromCal: true, date: e.date, time: e.time, spec: e.title,
+      who: detectPerson(e.title + " " + e.description, ppl), place: e.location, notes: e.description,
+    }));
+}
+
+function card(a, past, ppl) {
   const d = parseYmd(a.date);
   const soon = !past && daysBetween(ymd(), a.date) <= 2;
-  return `<li class="appt${past ? " past" : ""}${soon ? " soon" : ""}">
+  const c = a.who ? personColor(a.who, ppl) : -1;
+  return `<li class="appt${past ? " past" : ""}${soon ? " soon" : ""}${c >= 0 ? " pc pc-" + c : ""}">
     <div class="appt-date" aria-hidden="true"><span class="ad-day">${d.getDate()}</span><span class="ad-mon">${new Intl.DateTimeFormat("es-ES", { month: "short" }).format(d).replace(".", "")}</span></div>
     <div class="appt-body">
       <span class="appt-when">${esc(past ? fmtDayLong(a.date) : relDay(a.date) + " · " + fmtDayLong(a.date))}${a.time ? " · " + esc(a.time) : ""}</span>
-      <span class="appt-title">${esc(a.spec)} <span class="who-chip">${esc(a.who)}</span></span>
+      <span class="appt-title">${esc(a.spec)} ${a.who ? `<span class="who-chip">${esc(a.who)}</span>` : ""}</span>
       ${a.doc || a.reason ? `<span class="muted">${esc([a.doc, a.reason].filter(Boolean).join(" · "))}</span>` : ""}
       ${a.notes && !past ? `<span class="appt-notes">${esc(a.notes)}</span>` : ""}
-      ${!past ? `<span class="bk-links">
-        ${a.place ? `<a href="${esc(mapsLink(a.place))}" target="_blank" rel="noopener">${esc(a.place)}</a>` : ""}
-        <a href="${esc(calLink({ title: eventTitle(a), date: a.date, time: a.time, minutes: 45, details: details(a), location: a.place || "" }))}" target="_blank" rel="noopener">Al calendario</a>
-      </span>` : ""}
+      <span class="bk-links">
+        ${a.place && !past ? `<a href="${esc(mapsLink(a.place))}" target="_blank" rel="noopener">${esc(a.place)}</a>` : ""}
+        ${!past && !a.fromCal ? `<a href="${esc(calLink({ title: eventTitle(a), date: a.date, time: a.time, minutes: 45, details: details(a), location: a.place || "" }))}" target="_blank" rel="noopener">Al calendario</a>` : ""}
+        ${a.fromCal ? `<span class="from-cal">Del calendario de Google</span>` : ""}
+      </span>
     </div>
-    <button class="more" data-cita="${esc(a.id)}" aria-label="Editar cita de ${esc(a.who)}">•••</button>
+    ${a.fromCal ? "" : `<button class="more" data-cita="${esc(a.id)}" aria-label="Editar cita de ${esc(a.who)}">•••</button>`}
   </li>`;
 }
 
@@ -81,18 +93,23 @@ function render() {
   const root = $("view-citas");
   if (!root || !ctx.hid) return;
   const today = ymd();
-  const list = appts.filter((a) => !who || norm(a.who) === norm(who));
+  const ppl = people();
+  const all = [...appts, ...calendarAppts(ppl)];
+  const list = all.filter((a) => !who || personKey(a.who) === personKey(who));
   const upcoming = list.filter((a) => a.date >= today).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   const past = list.filter((a) => a.date < today).sort((a, b) => (b.date + (b.time || "")).localeCompare(a.date + (a.time || "")));
-  const ppl = people().filter((p) => appts.some((a) => norm(a.who) === norm(p)));
+  const withAppts = ppl.filter((p) => all.some((a) => personKey(a.who) === personKey(p)));
+  const st = feedState();
   root.innerHTML = `
     <div class="view-head"><h1>Citas médicas</h1><button class="btn" id="ci-new">Nueva cita</button></div>
-    ${ppl.length > 1 ? `<div class="filters">${[["", "Todos"], ...ppl.map((p) => [p, p])].map(([v, l]) => `<button class="filter" data-who="${esc(v)}" aria-selected="${norm(who) === norm(v)}">${esc(l)}</button>`).join("")}</div>` : ""}
-    ${upcoming.length ? `<ul class="appts">${upcoming.map((a) => card(a, false)).join("")}</ul>`
+    ${withAppts.length > 1 ? `<div class="filters">${[["", "Todos", -1], ...withAppts.map((p) => [p, p, personColor(p, ppl)])].map(([v, l, c]) =>
+      `<button class="filter${c >= 0 ? " pc pc-" + c : ""}" data-who="${esc(v)}" aria-selected="${personKey(who) === personKey(v)}">${esc(l)}</button>`).join("")}</div>` : ""}
+    ${upcoming.length ? `<ul class="appts">${upcoming.map((a) => card(a, false, ppl)).join("")}</ul>`
       : `<div class="empty"><strong>No hay citas pendientes</strong>Apunta aquí las citas de cualquiera de la familia. Todos las veréis, y con un toque se pasan al calendario de Google para que os avise.</div>`}
+    ${st.configured ? `<p class="muted small-print">Las citas con palabras como médico, pediatra, dentista o análisis en vuestro calendario de Google salen aquí solas.${st.status === "error" ? ` <span class="note">${esc(st.errorMsg)}</span>` : ""}</p>` : ""}
     ${past.length ? `<section class="panel plain">
       <button class="link" id="ci-past">${showPast ? "Ocultar" : "Ver"} citas anteriores (${past.length})</button>
-      ${showPast ? `<ul class="appts">${past.slice(0, 50).map((a) => card(a, true)).join("")}</ul>` : ""}
+      ${showPast ? `<ul class="appts">${past.slice(0, 50).map((a) => card(a, true, ppl)).join("")}</ul>` : ""}
     </section>` : ""}`;
 }
 
@@ -122,6 +139,9 @@ $("ci-form").addEventListener("submit", (e) => {
     date: $("ci-date").value, time: $("ci-time").value, doc: cap($("ci-doc").value).slice(0, 60),
     place: $("ci-place").value.trim().slice(0, 120), reason: cap($("ci-reason").value).slice(0, 120), notes: $("ci-notes").value.trim().slice(0, 600),
   };
+  // Si es alguien nuevo (un niño, un abuelo…), se guarda en la lista de personas de la familia.
+  if (data.who && !knownPeople().some((p) => personKey(p) === personKey(data.who)))
+    ctx.F.updateDoc(houseRef(), { people: ctx.F.arrayUnion(data.who) }).catch(() => {});
   if (editingId) ctx.F.updateDoc(subDoc("appointments", editingId), data).catch(failed);
   else ctx.F.addDoc(sub("appointments"), { ...data, addedBy: ctx.uid, createdAt: Date.now() }).catch(failed);
   editingId = null;

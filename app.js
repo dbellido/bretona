@@ -2,6 +2,7 @@ import { firebaseConfig } from "./firebase-config.js";
 import {
   FB, ctx, $, esc, cap, norm, initials, LS, toast, failed, houseRef, stores,
   storeOptions, newStore, shrink, askGemini, AISLES, AISLE_IDS, guessAisle,
+  knownPeople, personColor, personKey, PERSON_COLORS,
 } from "./core.js";
 import * as gastos from "./gastos.js";
 import * as viajes from "./viajes.js";
@@ -472,6 +473,7 @@ function renderFamily() {
   $("f-code").textContent = house.inviteCode || "";
   $("f-share").hidden = !navigator.share;
   renderStores();
+  renderPeople();
   if (document.activeElement !== $("f-name")) $("f-name").value = names[uid] || "";
 }
 function inviteText() {
@@ -491,6 +493,38 @@ $("f-store-form").addEventListener("submit", async (e) => {
   if (!stores().some((x) => norm(x) === norm(s))) await F.updateDoc(houseRef(), { stores: F.arrayUnion(s) }).catch(failed);
   $("f-store-name").value = "";
 });
+/* ---------- Personas y colores ---------- */
+function renderPeople() {
+  const ppl = knownPeople();
+  const memberKeys = new Set((house.members || []).map((m) => personKey(house.memberNames?.[m])));
+  $("f-people").innerHTML = ppl.map((p) => {
+    const c = personColor(p, ppl), k = personKey(p);
+    return `<li class="pc pc-${c}">
+      <span class="person-name">${esc(p)}</span>
+      <span class="swatches" role="radiogroup" aria-label="Color de ${esc(p)}">${Array.from({ length: PERSON_COLORS }, (_, i) =>
+        `<button class="sw pc-${i}" role="radio" aria-checked="${i === c}" aria-label="Color ${i + 1}" data-color="${i}" data-person="${esc(k)}"></button>`).join("")}</span>
+      ${memberKeys.has(k) ? "" : `<button class="person-del" data-del-person="${esc(p)}" aria-label="Quitar a ${esc(p)}">×</button>`}
+    </li>`;
+  }).join("");
+}
+$("f-people").addEventListener("click", (e) => {
+  const sw = e.target.closest("[data-color]");
+  if (sw) { F.updateDoc(houseRef(), { ["personColors." + sw.dataset.person]: Number(sw.dataset.color) }).catch(failed); return; }
+  const del = e.target.closest("[data-del-person]");
+  if (del) F.updateDoc(houseRef(), { people: F.arrayRemove(del.dataset.delPerson), ["personColors." + personKey(del.dataset.delPerson)]: F.deleteField() }).catch(failed);
+});
+$("f-person-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const n = cap($("f-person-name").value).slice(0, 30);
+  if (!n) return;
+  if (!knownPeople().some((p) => personKey(p) === personKey(n))) {
+    // Se fija su color al añadirla, para que no cambie el de nadie.
+    const ppl = knownPeople([n]);
+    F.updateDoc(houseRef(), { people: F.arrayUnion(n), ["personColors." + personKey(n)]: personColor(n, ppl) }).catch(failed);
+  }
+  $("f-person-name").value = "";
+});
+
 /* ---------- Tiendas: cambiar nombre, unir duplicadas y borrar ---------- */
 let storeEdit = null; // { name, mode: "edit" | "delete" }
 function renderStores() {
