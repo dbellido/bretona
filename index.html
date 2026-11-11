@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BRETONA</title>
+<meta name="description" content="La lista de la compra de la familia.">
+<meta name="theme-color" content="#1f6b4a" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111a15" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="BRETONA">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Pantalla de carga -->
+<section id="screen-loading" class="screen center">
+  <div class="logo">BRETONA<span class="dot"></span></div>
+  <p class="muted" id="loading-msg">Abriendo la lista…</p>
+</section>
+
+<!-- Falta configurar Firebase -->
+<section id="screen-setup" class="screen center" hidden>
+  <div class="logo">BRETONA<span class="dot"></span></div>
+  <div class="card">
+    <h2>Falta conectar la base de datos</h2>
+    <p>Abre <code>firebase-config.js</code> y pega la configuración de tu proyecto de Firebase. Los pasos están en <code>LEEME.md</code>.</p>
+  </div>
+</section>
+
+<!-- Bienvenida: crear o unirse a la familia -->
+<section id="screen-welcome" class="screen" hidden>
+  <div class="wrap welcome">
+    <div class="logo big">BRETONA<span class="dot"></span></div>
+    <p class="lead">La lista de la compra de casa, compartida con tu familia.</p>
+
+    <label class="field">
+      <span>¿Cómo te llamas?</span>
+      <input id="w-name" maxlength="30" autocomplete="given-name" placeholder="Tu nombre">
+    </label>
+
+    <div class="card">
+      <h2>Ya me han invitado</h2>
+      <p class="muted">Escribe el código que te han pasado.</p>
+      <form id="w-join" class="row">
+        <input id="w-code" placeholder="BRT-XXXX-XXXX" autocapitalize="characters" autocomplete="off" maxlength="16">
+        <button class="btn" type="submit">Unirme</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Empezar una lista nueva</h2>
+      <p class="muted">Crea la lista de tu familia y luego invita a los demás con un código.</p>
+      <button class="btn wide" id="w-create">Crear la lista de mi familia</button>
+    </div>
+    <p class="note" id="w-note" role="alert"></p>
+  </div>
+</section>
+
+<!-- App principal -->
+<section id="screen-app" class="screen" hidden>
+  <header class="top">
+    <div class="wrap top-in">
+      <div class="logo">BRETONA<span class="dot"></span></div>
+      <button class="icon-btn" id="open-family" aria-label="Familia y ajustes">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="17" cy="9" r="2.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M17.5 14c2 .3 3.3 1.8 3.6 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="sticky">
+    <div class="wrap sticky-in">
+      <form id="add-form" class="add" autocomplete="off">
+        <input id="add-name" placeholder="Añadir… (leche, tomates)" aria-label="Producto" maxlength="60" enterkeyhint="done">
+        <input id="add-qty" placeholder="Cant." aria-label="Cantidad" maxlength="12">
+        <button class="icon-btn solid" type="button" id="photo-btn" aria-label="Añadir desde una foto">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.3l1.4-2h5.6l1.4 2h1.3A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <button class="btn" type="submit" id="add-btn">Añadir</button>
+      </form>
+      <div class="add-store">
+        <label for="add-store">Tienda</label>
+        <select id="add-store"></select>
+      </div>
+      <input type="file" id="photo-input" accept="image/*" hidden>
+      <div class="filters" id="filters" role="tablist" aria-label="Filtrar por tienda"></div>
+      <div class="status"><span id="count"></span><span class="note" id="note" role="status"></span></div>
+    </div>
+  </div>
+
+  <main class="wrap" id="list"></main>
+  <div class="wrap"><div class="chips-title" id="chips-title" hidden>Lo de siempre</div><div class="chips" id="chips"></div></div>
+</section>
+
+<!-- Editar producto -->
+<dialog id="dlg-edit" class="sheet">
+  <form method="dialog" id="edit-form">
+    <h2>Editar producto</h2>
+    <label class="field"><span>Producto</span><input id="e-name" maxlength="60" required></label>
+    <div class="row">
+      <label class="field"><span>Cantidad</span><input id="e-qty" maxlength="12"></label>
+      <label class="field"><span>Tienda</span><select id="e-store"></select></label>
+    </div>
+    <label class="field"><span>Sección</span><select id="e-aisle"></select></label>
+    <div class="sheet-actions">
+      <button class="link danger" type="button" id="e-delete">Borrar</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" value="cancel" formnovalidate>Cancelar</button>
+      <button class="btn" id="e-save" value="save">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Productos leídos de una foto -->
+<dialog id="dlg-photo" class="sheet">
+  <div class="photo-head">
+    <img id="p-img" alt="Foto subida">
+    <div>
+      <h2>Desde la foto</h2>
+      <p class="muted" id="p-status">Leyendo los productos…</p>
+    </div>
+  </div>
+  <ul class="p-list" id="p-list"></ul>
+  <div class="row p-store">
+    <label class="field"><span>Tienda para todos</span><select id="p-store"></select></label>
+  </div>
+  <div class="sheet-actions">
+    <button class="btn ghost" id="p-cancel" type="button">Cancelar</button>
+    <span class="spacer"></span>
+    <button class="btn" id="p-add" type="button" disabled>Añadir</button>
+  </div>
+</dialog>
+
+<!-- Familia y ajustes -->
+<dialog id="dlg-family" class="sheet">
+  <div class="sheet-head">
+    <h2>Familia</h2>
+    <button class="icon-btn" id="f-close" aria-label="Cerrar">×</button>
+  </div>
+  <ul class="members" id="f-members"></ul>
+
+  <div class="card">
+    <h3>Invitar a alguien</h3>
+    <p class="muted">Que instale BRETONA en su móvil y escriba este código:</p>
+    <div class="code-row">
+      <code id="f-code" class="code"></code>
+      <button class="btn ghost" id="f-copy" type="button">Copiar</button>
+      <button class="btn ghost" id="f-share" type="button" hidden>Enviar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Supermercados y tiendas</h3>
+    <ul class="stores" id="f-stores"></ul>
+    <form class="row" id="f-store-form" autocomplete="off">
+      <input id="f-store-name" placeholder="Mercadona, Lidl, la frutería…" maxlength="30">
+      <button class="btn" type="submit">Añadir</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Tu nombre</h3>
+    <form class="row" id="f-name-form">
+      <input id="f-name" maxlength="30">
+      <button class="btn ghost" type="submit">Guardar</button>
+    </form>
+  </div>
+
+  <div class="leave">
+    <button class="link danger" id="f-leave" type="button">Salir de esta familia</button>
+    <span class="confirm" id="f-leave-confirm" hidden>
+      ¿Seguro? Necesitarás el código para volver.
+      <button class="btn danger-btn" id="f-leave-yes" type="button">Salir</button>
+      <button class="link" id="f-leave-no" type="button">Cancelar</button>
+    </span>
+  </div>
+</dialog>
+
+<script type="module" src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  }
+</script>
+</body>
+</html>
