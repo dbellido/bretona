@@ -21,7 +21,7 @@ function doGet(e) {
   const tipo = p.tipo;
   if (tipo === 'reservas') return salida(reservas());
   if (tipo === 'borrar') return salida(borrar(p.ids || ''));
-  if (tipo === 'pisos') return salida(pisos());
+  if (tipo === 'pisos') return salida(pisos(p.releer === '1'));
   if (tipo === 'ruta') return salida(ruta(p.origen || '', p.hora || '08:30'));
   return salida(calendario());
 }
@@ -48,31 +48,61 @@ function calendario() {
 }
 
 /* ---------- Pisos (alertas por correo) ---------- */
-function pisos() {
+// releer = true: busca también en la papelera (para volver a leer los datos de pisos ya guardados).
+function pisos(releer) {
   const cache = CacheService.getScriptCache();
-  const guardado = cache.get('pisos');
+  const guardado = releer ? null : cache.get('pisos');
   if (guardado) return JSON.parse(guardado);
   const vistos = {};
   const lista = [];
-  GmailApp.search(BUSQUEDA_PISOS, 0, 60).forEach((hilo) => {
+  const correos = {};
+  GmailApp.search(BUSQUEDA_PISOS + (releer ? ' in:anywhere' : ''), 0, releer ? 100 : 60).forEach((hilo) => {
     hilo.getMessages().forEach((m) => {
       const de = m.getFrom().toLowerCase();
       const portal = de.indexOf('idealista') >= 0 ? 'idealista' : de.indexOf('fotocasa') >= 0 ? 'fotocasa' : de.indexOf('yaencontre') >= 0 ? 'yaencontre' : '';
       if (!portal) return;
       const fecha = Utilities.formatDate(m.getDate(), 'Europe/Madrid', 'yyyy-MM-dd');
-      extraer(m.getBody(), portal).forEach((a) => {
+      const html = m.getBody();
+      let alguno = false;
+      extraer(html, portal).forEach((a) => {
         if (vistos[a.id]) return;
         vistos[a.id] = true;
+        alguno = true;
         a.fecha = fecha;
         a.asunto = m.getSubject();
         a.correo = m.getId();
         lista.push(a);
       });
+      // El texto del correo con cada anuncio marcado como [[id]], para que Gemini (en BRETONA) lea bien sus datos.
+      if (alguno) correos[m.getId()] = textoConMarcas(html, portal);
     });
   });
-  const res = { pisos: lista.slice(0, 300) };
-  try { cache.put('pisos', JSON.stringify(res), 600); } catch (err) {}
+  const res = { pisos: lista.slice(0, 300), correos: correos };
+  if (!releer) { try { cache.put('pisos', JSON.stringify(res), 600); } catch (err) {} }
   return res;
+}
+
+// Id y enlace limpio del anuncio al que apunta un enlace del correo (o null si no es un anuncio).
+function idDe(url, portal) {
+  let dec = String(url).replace(/&amp;/g, '&');
+  for (let i = 0; i < 3; i++) { try { dec = decodeURIComponent(dec); } catch (e) { break; } }
+  const r = dec.match(PATRONES[portal]);
+  if (!r) return null;
+  return { id: portal + '-' + r[1], url: portal === 'idealista' ? 'https://www.idealista.com/inmueble/' + r[1] + '/' : r[0] };
+}
+
+function limpiar(texto) {
+  return texto.replace(/&nbsp;|&#160;/g, ' ').replace(/&euro;|&#8364;/g, '€').replace(/&amp;/g, '&')
+    .replace(/&sup2;|&#178;/g, '²').replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é').replace(/&iacute;/g, 'í')
+    .replace(/&oacute;/g, 'ó').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ').replace(/&#\d+;|&[a-z]+;/g, ' ');
+}
+
+function textoConMarcas(html, portal) {
+  let h = html.replace(/<(style|head|script)[\s\S]*?<\/\1>/gi, ' ').replace(/<sup>\s*2\s*<\/sup>/gi, '²');
+  h = h.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (m, url) => { const r = idDe(url, portal); return r ? ' [[' + r.id + ']] ' : ' '; });
+  h = h.replace(/<(br|\/p|\/div|\/tr|\/li|\/h\d|\/table)[^>]*>/gi, '\n').replace(/<[^>]+>/g, ' ');
+  h = limpiar(h).replace(/[ \t]+/g, ' ').replace(/\n\s*\n+/g, '\n').replace(/(\[\[[^\]]+\]\])(\s*\1)+/g, '$1');
+  return h.trim().slice(0, 15000);
 }
 
 const PATRONES = {
@@ -107,11 +137,11 @@ function extraer(html, portal) {
     for (let j = i + 1; j < enlaces.length; j++) if (enlaces[j].id !== en.id) { fin = enlaces[j].pos; break; }
     const inicio = en.pos;
     const trozo = html.slice(inicio, Math.min(fin, en.pos + 6000));
-    const texto = trozo.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ')
+    const texto = trozo.replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<sup>\s*2\s*<\/sup>/gi, '²').replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;|&#160;/g, ' ').replace(/&euro;|&#8364;/g, '€').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
-    const precio = (texto.match(/(\d{1,3}(?:[.\s]\d{3})+|\d{4,7})\s?€/) || [])[1] || '';
+    const precio = (texto.match(/(\d{1,3}(?:[.\s]\d{3})+|\d{4,7})\s?(?:€|euros?)/i) || [])[1] || '';
     const hab = (texto.match(/(\d{1,2})\s?(?:hab\.?|habitaci[oó]n(?:es)?|dormitorios?)/i) || [])[1] || '';
-    const m2 = (texto.match(/(\d{2,4})\s?m(?:²|2)/i) || [])[1] || '';
+    const m2 = (texto.match(/(\d{2,4})\s?m(?:²|2|\s2\b|etros)/i) || [])[1] || '';
     // Garaje y trastero: true si se mencionan, false si dice "sin garaje", null si no se sabe.
     const garaje = /sin (plaza de )?garaje/i.test(texto) ? false : /garaje|plaza de parking|parking incluido|aparcamiento incluido/i.test(texto) ? true : null;
     const trastero = /sin trastero/i.test(texto) ? false : /trastero/i.test(texto) ? true : null;
@@ -230,6 +260,16 @@ function probarReservas() {
 }
 function probarRuta() {
   Logger.log(JSON.stringify(ruta('Calle de Bravo Murillo 150, Madrid', '08:30')));
+}
+// Muestra cómo ve BRETONA el primer correo de alertas (para ajustar la lectura si hiciera falta).
+function verCorreoPisos() {
+  const h = GmailApp.search(BUSQUEDA_PISOS + ' in:anywhere', 0, 1)[0];
+  if (!h) { Logger.log('No hay correos de alertas'); return; }
+  const m = h.getMessages()[0];
+  const de = m.getFrom().toLowerCase();
+  const portal = de.indexOf('idealista') >= 0 ? 'idealista' : de.indexOf('fotocasa') >= 0 ? 'fotocasa' : 'yaencontre';
+  Logger.log(m.getFrom() + ' · ' + m.getSubject());
+  Logger.log(textoConMarcas(m.getBody(), portal).slice(0, 3000));
 }
 function probarPisos() {
   CacheService.getScriptCache().remove('pisos');

@@ -1,7 +1,7 @@
 // Pestaña Pisos (beta): anuncios de las alertas de Idealista, Fotocasa y Yaencontre,
 // leídos del correo por el programa de Google. Cada miembro vota; si todos dicen que sí, pasa a Favoritos.
 import {
-  ctx, $, esc, cap, norm, toast, failed, sub, subDoc, houseRef, memberName, callScript, CLAVE_MSG,
+  ctx, $, esc, cap, norm, toast, failed, sub, subDoc, houseRef, memberName, callScript, CLAVE_MSG, askGemini,
   ymd, fmtDate, euro, parseEuro, safeUrl, knownPeople, personColor, LS,
 } from "./core.js";
 
@@ -53,6 +53,8 @@ document.body.insertAdjacentHTML("beforeend", `
       <label class="field"><span>Saliendo a las</span><input id="cr-hour" type="time" value="08:30"></label>
     </div>
     <p class="muted small-print">Tiempo en transporte público hasta Nuevos Ministerios o Chamartín (el más cercano), un día laborable. Déjalo vacío para no filtrar por trayecto.</p>
+    <button class="btn ghost" type="button" id="cr-reread">Volver a leer los datos de los anuncios</button>
+    <p class="muted small-print">Gemini vuelve a leer precio, m², habitaciones, garaje y trastero de los correos de alertas (también de la papelera). No cambia los que hayáis corregido a mano.</p>
     <label class="check-row"><input type="checkbox" id="cr-trash"> Mandar a la papelera de Gmail los correos de alertas ya guardados en BRETONA</label>
     <label class="field"><span>Descartar si el título contiene</span><input id="cr-words" maxlength="200" placeholder="bajo, nuda propiedad, okupado"></label>
     <div class="sheet-actions">
@@ -111,6 +113,8 @@ async function sync(force = false) {
     if (!Array.isArray(data.pisos)) throw new Error(data.error || "sin pisos");
     const byId = new Map(pisos.map((p) => [p.id, p]));
     const fresh = data.pisos.filter((a) => a && a.id && !byId.has(safeId(a.id)));
+    // Gemini lee los datos de cada anuncio en su correo (más fiable que buscar números en el texto).
+    if (fresh.length && data.correos) { syncMsg = "Leyendo los datos de los anuncios…"; render(); await enrich(fresh, data.correos); }
     // A los anuncios que ya estaban, completarles garaje y trastero si ahora se saben.
     const upd = data.pisos.filter((a) => a && byId.has(safeId(a.id))).map((a) => [byId.get(safeId(a.id)), a])
       .filter(([p, a]) => (p.garage === undefined && a.garaje != null) || (p.storage === undefined && a.trastero != null));
@@ -149,6 +153,84 @@ async function sync(force = false) {
     syncing = false; render();
   }
 }
+/* ---------- Leer los datos de los anuncios con Gemini ---------- */
+function enrichPrompt(text, ids) {
+  return `Esto es un correo de alertas de pisos EN VENTA de un portal inmobiliario español. Cada anuncio está marcado con [[ID]] (puede salir varias veces: en la foto y en el título).
+Los datos de cada anuncio están junto a su marca: a veces justo antes (por ejemplo, el precio encima de la foto) y a veces justo después. No mezcles los datos de un anuncio con los del siguiente.
+Anuncios a leer: ${ids.join(", ")}
+Responde SOLO con JSON con esta forma exacta:
+{"anuncios":[{"id":"idealista-123","precio":320000,"m2":95,"habitaciones":3,"garaje":true,"trastero":null,"titulo":"Piso en calle de Orense, Cuatro Caminos","zona":"Cuatro Caminos"}]}
+Reglas:
+- "precio": en euros, número sin puntos. Si aparece una bajada de precio, el precio NUEVO.
+- "m2": metros cuadrados construidos (número). "habitaciones": número.
+- "garaje" y "trastero": true si el anuncio dice que lo tiene o lo incluye, false si dice que no, null si no se menciona.
+- "titulo": el título del anuncio tal cual. "zona": barrio o zona si aparece.
+- NO inventes: si un dato no aparece junto al anuncio, pon null.
+
+TEXTO DEL CORREO:
+${text}`;
+}
+// Completa (y corrige) los datos de los anuncios con lo que Gemini lea en sus correos.
+async function enrich(list, correos) {
+  const byMail = new Map();
+  for (const a of list) if (a.correo && correos[a.correo]) (byMail.get(a.correo) || byMail.set(a.correo, []).get(a.correo)).push(a);
+  let n = 0;
+  for (const [mail, items] of byMail) {
+    if (n++ >= 12) break; // el resto, en la siguiente lectura
+    try {
+      const d = await askGemini(enrichPrompt(correos[mail], items.map((a) => a.id)), null, { temperature: 0 });
+      const got = new Map((Array.isArray(d) ? d : d?.anuncios || []).map((x) => [x.id, x]));
+      for (const a of items) {
+        const x = got.get(a.id); if (!x) continue;
+        const num = (v) => (typeof v === "number" ? v : parseEuro(v)) || null;
+        if (num(x.precio)) a.precio = Math.round(num(x.precio));
+        if (num(x.m2)) a.m2 = Math.round(num(x.m2));
+        if (num(x.habitaciones)) a.habitaciones = Math.round(num(x.habitaciones));
+        if (typeof x.garaje === "boolean") a.garaje = x.garaje;
+        if (typeof x.trastero === "boolean") a.trastero = x.trastero;
+        if (x.titulo) a.titulo = String(x.titulo);
+        if (x.zona) a.zona = String(x.zona);
+        a.leido = true;
+      }
+    } catch (e) { console.error(e); }
+  }
+}
+
+// Volver a leer los datos de los anuncios ya guardados (también de correos en la papelera).
+// No toca los que se hayan corregido a mano.
+async function reread() {
+  if (syncing) return;
+  syncing = true; syncMsg = "Buscando los correos de alertas…"; render();
+  try {
+    const data = await callScript({ tipo: "pisos", releer: "1" });
+    if (!Array.isArray(data.pisos) || !data.correos) throw new Error("viejo");
+    const byId = new Map(pisos.map((p) => [p.id, p]));
+    const list = data.pisos.filter((a) => a && byId.has(safeId(a.id)) && !byId.get(safeId(a.id)).edited);
+    if (!list.length) { syncMsg = "No hay anuncios que volver a leer."; return; }
+    syncMsg = `Leyendo los datos de ${list.length} anuncios…`; render();
+    await enrich(list, data.correos);
+    const b = ctx.F.writeBatch(ctx.fs);
+    let changed = 0;
+    for (const a of list) {
+      if (!a.leido) continue;
+      b.update(subDoc("pisos", safeId(a.id)), {
+        price: Number(a.precio) || null, size: Number(a.m2) || null, rooms: Number(a.habitaciones) || null,
+        garage: a.garaje ?? null, storage: a.trastero ?? null, title: cap(a.titulo || byId.get(safeId(a.id)).title).slice(0, 160),
+        place: String(a.zona || "").slice(0, 120),
+      });
+      changed++;
+    }
+    if (changed) await b.commit();
+    syncMsg = changed ? `Datos corregidos en ${changed} ${changed === 1 ? "anuncio" : "anuncios"}` : "Gemini no ha podido leer los correos. Prueba más tarde.";
+    if (list.length > changed && changed) syncMsg += ` (quedan ${list.length - changed}: vuelve a pulsarlo)`;
+  } catch (e) {
+    console.error(e);
+    syncMsg = e.message === "clave" ? CLAVE_MSG : e.message === "viejo" ? "Actualiza el programa de Google para volver a leer los datos (te lo explica Claude)." : "No se han podido volver a leer los datos.";
+  } finally {
+    syncing = false; render();
+  }
+}
+
 /* ---------- Trayecto en transporte público (a través del programa de Google) ---------- */
 // De dónde sale el trayecto: la dirección escrita a mano o, si no, la calle/barrio del título del anuncio.
 function originOf(p) {
@@ -411,7 +493,7 @@ $("ps-form").addEventListener("submit", (e) => {
     storage: { si: true, no: false }[$("ps-storage").value] ?? null,
   };
   setTimeout(routes, 800);
-  if (editingId) ctx.F.updateDoc(subDoc("pisos", editingId), data).catch(failed);
+  if (editingId) ctx.F.updateDoc(subDoc("pisos", editingId), { ...data, edited: true }).catch(failed);
   else {
     const id = safeId(data.portal + "-" + ((url.match(/(\d{6,})/) || [])[1] || Date.now()));
     if (pisos.some((p) => p.id === id)) { e.preventDefault(); $("ps-msg").textContent = "Ese anuncio ya está en la lista."; return; }
@@ -425,6 +507,7 @@ $("ps-delete").addEventListener("click", () => {
   $("dlg-piso").close();
 });
 
+$("cr-reread").addEventListener("click", () => { $("dlg-criteria").close(); reread(); });
 function openCriteria() {
   const c = criteria();
   $("cr-min").value = c.maxMinutes || ""; $("cr-hour").value = c.hour || "08:30";
