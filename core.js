@@ -154,6 +154,20 @@ export async function askGemini(prompt, base64 = null, { temperature = 0.9 } = {
   catch { return null; }
 }
 
+/* ---------- Programa de Google de la familia (Apps Script) ---------- */
+// Llama al programa con la clave de la familia. Lanza Error("clave") si la clave no coincide.
+export async function callScript(params = {}, { url = ctx.house?.calendarFeed, key = ctx.house?.scriptKey } = {}) {
+  if (!url) throw new Error("sin programa");
+  const u = new URL(url);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  if (key) u.searchParams.set("k", key);
+  const r = await fetch(u.toString(), { redirect: "follow" });
+  const data = await r.json();
+  if (data && data.error === "clave") throw new Error("clave");
+  return data;
+}
+export const CLAVE_MSG = "La clave de BRETONA no coincide con la del programa de Google. Revísala en Calendario → Lectura del calendario.";
+
 /* ---------- Formularios ---------- */
 export function storeOptions(selected, { any = "Cualquier tienda", addNew = true } = {}) {
   const list = [...stores()];

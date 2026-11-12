@@ -1,15 +1,28 @@
-// BRETONA · programa de la familia: lee el calendario y los correos de alertas de pisos.
-// Pega este texto en https://script.google.com y cambia SOLO la línea de abajo.
+// BRETONA · programa de la familia: lee el calendario, las alertas de pisos y las reservas de viaje del correo.
+// Pega este texto en https://script.google.com y cambia SOLO las dos líneas de abajo.
 
 const ID_CALENDARIO = 'PEGA_AQUI_EL_ID_DEL_CALENDARIO';
+const CLAVE = 'PEGA_AQUI_LA_CLAVE';   // la misma que pongas en BRETONA (Calendario → Lectura del calendario)
 
 // Correos de alertas que se leen (de los últimos 45 días).
 const BUSQUEDA_PISOS = 'from:(idealista.com OR fotocasa.es OR yaencontre.com) newer_than:45d';
 
+// Correos de reservas de viaje (de los últimos 6 meses).
+const BUSQUEDA_RESERVAS = 'newer_than:180d -category:promotions -category:social (' +
+  'from:(booking.com OR airbnb OR ryanair OR iberia OR vueling OR renfe OR easyjet OR aireuropa OR iryo OR ouigo OR volotea OR binter OR ' +
+  'expedia OR edreams OR trainline OR rumbo OR logitravel OR hotels.com OR lufthansa OR flytap OR klm OR airfrance OR alsa OR europcar OR ' +
+  'sixt OR hertz OR avis OR goldcar OR centauro OR rentalcars OR paradores OR melia OR nh-hotels OR barcelo OR iberostar OR riu) OR ' +
+  'subject:("confirmación de reserva" OR "confirmación de tu reserva" OR "confirmación de su reserva" OR "reserva confirmada" OR ' +
+  '"booking confirmation" OR "tarjeta de embarque" OR "boarding pass" OR "tu billete" OR "sus billetes" OR "tus billetes" OR localizador OR itinerario))';
+
 function doGet(e) {
-  const tipo = e && e.parameter && e.parameter.tipo;
+  const p = (e && e.parameter) || {};
+  if (CLAVE && CLAVE !== 'PEGA_AQUI_LA_CLAVE' && p.k !== CLAVE) return salida({ error: 'clave' });
+  const tipo = p.tipo;
+  if (tipo === 'reservas') return salida(reservas());
+  if (tipo === 'borrar') return salida(borrar(p.ids || ''));
   if (tipo === 'pisos') return salida(pisos());
-  if (tipo === 'ruta') return salida(ruta(e.parameter.origen || '', e.parameter.hora || '08:30'));
+  if (tipo === 'ruta') return salida(ruta(p.origen || '', p.hora || '08:30'));
   return salida(calendario());
 }
 
@@ -52,6 +65,7 @@ function pisos() {
         vistos[a.id] = true;
         a.fecha = fecha;
         a.asunto = m.getSubject();
+        a.correo = m.getId();
         lista.push(a);
       });
     });
@@ -98,6 +112,9 @@ function extraer(html, portal) {
     const precio = (texto.match(/(\d{1,3}(?:[.\s]\d{3})+|\d{4,7})\s?€/) || [])[1] || '';
     const hab = (texto.match(/(\d{1,2})\s?(?:hab\.?|habitaci[oó]n(?:es)?|dormitorios?)/i) || [])[1] || '';
     const m2 = (texto.match(/(\d{2,4})\s?m(?:²|2)/i) || [])[1] || '';
+    // Garaje y trastero: true si se mencionan, false si dice "sin garaje", null si no se sabe.
+    const garaje = /sin (plaza de )?garaje/i.test(texto) ? false : /garaje|plaza de parking|parking incluido|aparcamiento incluido/i.test(texto) ? true : null;
+    const trastero = /sin trastero/i.test(texto) ? false : /trastero/i.test(texto) ? true : null;
     const foto = ((trozo.match(/<img[^>]+src=["'](https:[^"']+)["']/i) || [])[1] || '').replace(/&amp;/g, '&');
     const titulos = (trozo.match(/>([^<>]{12,160})</g) || []).map((t) => t.slice(1, -1).trim())
       .filter((t) => /piso|casa|chalet|[aá]tico|d[uú]plex|apartamento|estudio|vivienda|adosado|planta|calle|avenida|plaza/i.test(t) && !/€/.test(t));
@@ -107,10 +124,50 @@ function extraer(html, portal) {
       precio: precio ? Number(precio.replace(/[.\s]/g, '')) : null,
       habitaciones: hab ? Number(hab) : null,
       m2: m2 ? Number(m2) : null,
+      garaje: garaje,
+      trastero: trastero,
       foto: /logo|icon|pixel|track/i.test(foto) ? '' : foto,
     });
   });
   return res;
+}
+
+// Manda a la papelera los correos de alertas cuyos pisos ya están en BRETONA.
+// Solo toca correos de idealista, Fotocasa o yaencontré; se pueden recuperar de la papelera durante 30 días.
+function borrar(ids) {
+  let n = 0;
+  String(ids).split(',').filter(Boolean).slice(0, 100).forEach((id) => {
+    try {
+      const m = GmailApp.getMessageById(id);
+      if (m && /idealista\.com|fotocasa\.es|yaencontre\.com/i.test(m.getFrom()) && !m.isInTrash()) { m.moveToTrash(); n++; }
+    } catch (err) {}
+  });
+  CacheService.getScriptCache().remove('pisos');
+  return { borrados: n };
+}
+
+/* ---------- Reservas de viaje (correos) ---------- */
+// Devuelve el texto de los correos de reservas; BRETONA (con Gemini) saca de ahí los vuelos, trenes y hoteles.
+function reservas() {
+  const lista = [];
+  GmailApp.search(BUSQUEDA_RESERVAS, 0, 40).forEach((hilo) => {
+    hilo.getMessages().slice(-3).forEach((m) => {
+      const html = m.getBody();
+      // Muchas compañías incluyen los datos de la reserva en formato estructurado (schema.org).
+      const ld = (html.match(/<script[^>]+application\/ld\+json[^>]*>[\s\S]*?<\/script>/gi) || [])
+        .map((b) => b.replace(/<[^>]+>/g, '').trim()).join('\n').slice(0, 4000);
+      const texto = m.getPlainBody().replace(/\s+/g, ' ').slice(0, 5000);
+      lista.push({
+        id: m.getId(),
+        fecha: Utilities.formatDate(m.getDate(), 'Europe/Madrid', 'yyyy-MM-dd'),
+        de: m.getFrom(),
+        asunto: m.getSubject(),
+        datos: ld,
+        texto: texto,
+      });
+    });
+  });
+  return { correos: lista.slice(0, 60) };
 }
 
 /* ---------- Trayecto en transporte público ---------- */
@@ -165,6 +222,11 @@ function salida(obj) {
 function probar() {
   const r = calendario();
   Logger.log(r.error || ('Calendario OK: ' + r.calendario + ' · ' + r.eventos + ' eventos'));
+}
+function probarReservas() {
+  const r = reservas();
+  Logger.log('Correos de reservas encontrados: ' + r.correos.length);
+  r.correos.slice(0, 10).forEach((c) => Logger.log(c.fecha + ' · ' + c.de + ' · ' + c.asunto + (c.datos ? ' · con datos estructurados' : '')));
 }
 function probarRuta() {
   Logger.log(JSON.stringify(ruta('Calle de Bravo Murillo 150, Madrid', '08:30')));

@@ -1,5 +1,5 @@
 // Lee los eventos del calendario de Google a través del programa (Apps Script) de la familia.
-import { ctx, LS, norm } from "./core.js";
+import { ctx, LS, norm, callScript, CLAVE_MSG } from "./core.js";
 
 let events = null;      // null = sin configurar o aún sin leer
 let status = "";        // "", "loading", "error"
@@ -58,8 +58,7 @@ export async function refreshFeed(force = false) {
   status = "loading"; emit();
   inflight = (async () => {
     try {
-      const r = await fetch(url, { redirect: "follow" });
-      const data = await r.json();
+      const data = await callScript();
       if (data.error) throw new Error(data.error);
       events = normalize(data.events);
       fetchedAt = Date.now(); status = ""; errorMsg = "";
@@ -68,6 +67,7 @@ export async function refreshFeed(force = false) {
       console.error(e);
       status = "error";
       errorMsg = !navigator.onLine ? "Sin conexión: se muestran los eventos guardados."
+        : e.message === "clave" ? CLAVE_MSG
         : /calendario/.test(e.message || "") ? "El programa no encuentra el calendario. Revisa el ID que pegaste en él."
         : "No se ha podido leer el calendario. Revisa que la aplicación web esté implementada con acceso «Cualquier usuario».";
     } finally {

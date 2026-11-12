@@ -78,12 +78,24 @@ Para que los eventos salgan como lista dentro de BRETONA y las citas médicas ap
 
 Cualquiera con esa dirección puede ver los eventos del calendario, igual que con la "dirección secreta" de Google Calendar: no la compartas fuera de la familia.
 
+## Clave del programa de Google
+El programa lee datos privados (calendario, alertas y reservas del correo). Para que solo BRETONA pueda pedírselos:
+1. En el programa, pon una clave larga en la línea `const CLAVE = '…'`, guarda e implementa una **nueva versión**.
+2. En BRETONA → Calendario → Lectura del calendario, escribe la misma clave en **Clave** y guarda.
+
+## Viajes: reservas del correo
+En Viajes, «Buscar reservas en el correo» lee los correos de confirmación (vuelos, trenes, hoteles, coches) de los últimos 6 meses del Gmail donde está el programa. Gemini saca los datos, tú los revisas y eliges a qué viaje va cada reserva. Los correos ya revisados no se vuelven a leer. Si las reservas llegan a otro correo, reenvíalas a ese Gmail.
+
 ## Pisos: alertas de los portales (beta)
 1. En idealista, Fotocasa y yaencontré, haced una búsqueda con vuestros criterios y guardadla como **alerta por correo**, con el Gmail donde está el programa de Google (o reenviad a ese Gmail las alertas que os lleguen a otro correo).
 2. Pega en el programa de Google la versión nueva de `calendario-google.gs` (manteniendo tu ID de calendario), ejecuta `probarPisos` para dar permiso de lectura del correo, y en **Implementar → Gestionar implementaciones → ✏️ → Versión: Nueva versión → Implementar**. Así la dirección no cambia.
 3. BRETONA lee esos correos al abrir Pisos (o con «Actualizar»).
 
 Cada piso muestra el tiempo en transporte público hasta Nuevos Ministerios o Chamartín (saliendo a las 8:30 de un laborable). Los de más de 40 minutos van a «No cumplen». Se puede cambiar en Criterios. Como las alertas no suelen dar la dirección exacta, el tiempo es aproximado: si la sabéis, ponedla en ••• del piso.
+
+En «Por revisar», cada uno ve sus pisos pendientes como una baraja: desliza a la derecha si te gusta y a la izquierda si no (o usa los botones ♥ y ✕). Con «Deshacer» vuelve el último. Debajo están los que esperan el voto de los demás.
+
+Cuando los pisos de un correo de alerta ya están guardados, ese correo va a la papelera de Gmail (se puede recuperar 30 días). Se desactiva en Criterios.
 
 BRETONA no entra en los portales: solo lee los correos de alerta que os mandan ellos.
 

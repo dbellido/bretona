@@ -1,5 +1,5 @@
 // Pestaña Calendario: eventos del calendario compartido de Google, como lista (con colores por persona) o con la vista de Google.
-import { ctx, $, esc, cap, toast, failed, houseRef, ymd, addDays, fmtDayLong, relDay, calLink, mapsLink, LS, knownPeople, personColor, detectPerson } from "./core.js";
+import { ctx, $, esc, cap, toast, failed, houseRef, callScript, ymd, addDays, fmtDayLong, relDay, calLink, mapsLink, LS, knownPeople, personColor, detectPerson } from "./core.js";
 import { feedState, onFeed, refreshFeed, isMedical } from "./feed.js";
 
 let mode = LS.get("bretona.calmode") || "AGENDA"; // AGENDA | WEEK | MONTH (vista de Google)
@@ -34,6 +34,8 @@ document.body.insertAdjacentHTML("beforeend", `
     <h2>Leer el calendario en BRETONA</h2>
     <p class="muted">Con esto, los eventos salen como lista dentro de la app (también en iPhone) y las citas médicas aparecen solas en Citas. Se hace una vez, desde el ordenador. Los pasos te los da Claude en el chat.</p>
     <label class="field"><span>Dirección de la aplicación web</span><input id="feed-url" placeholder="https://script.google.com/macros/s/…/exec" spellcheck="false" autocapitalize="off"></label>
+    <label class="field"><span>Clave</span><input id="feed-key" placeholder="La misma que en la línea CLAVE del programa" spellcheck="false" autocapitalize="off" autocomplete="off"></label>
+    <p class="muted small-print">La clave hace que solo BRETONA pueda pedir datos a vuestro programa (calendario, pisos y reservas del correo).</p>
     <p class="note" id="feed-msg"></p>
     <div class="sheet-actions">
       <button class="link danger" type="button" id="feed-remove" hidden>Desconectar</button>
@@ -175,6 +177,7 @@ document.addEventListener("submit", (e) => {
 // Lectura del calendario (Apps Script)
 function openFeed() {
   $("feed-url").value = ctx.house?.calendarFeed || "";
+  $("feed-key").value = ctx.house?.scriptKey || "";
   $("feed-msg").textContent = "";
   $("feed-remove").hidden = !ctx.house?.calendarFeed;
   $("dlg-feed").showModal();
@@ -186,16 +189,17 @@ $("feed-form").addEventListener("submit", async (e) => {
   if (!/^https:\/\/script\.google(usercontent)?\.com\/.+/.test(url)) { $("feed-msg").textContent = "Pega la dirección que te da Google al implementar: empieza por https://script.google.com/macros/s/ y acaba en /exec."; return; }
   $("feed-msg").innerHTML = '<span class="spinner"></span>Probando…';
   try {
-    const r = await fetch(url, { redirect: "follow" });
-    const data = await r.json();
+    const key = $("feed-key").value.trim();
+    const data = await callScript({}, { url, key });
     if (data.error) { $("feed-msg").textContent = "El programa responde, pero no encuentra el calendario. Revisa el ID que pegaste en él."; return; }
-    await ctx.F.updateDoc(houseRef(), { calendarFeed: url });
+    await ctx.F.updateDoc(houseRef(), { calendarFeed: url, scriptKey: key });
     $("dlg-feed").close();
     view = "lista"; LS.set("bretona.calview", view);
     toast(`Leyendo «${data.calendario || "calendario"}»: ${data.eventos ?? (data.events || []).length} eventos`);
     refreshFeed(true);
   } catch (err) {
     console.error(err);
+    if (err.message === "clave") { $("feed-msg").textContent = "La clave no coincide con la de la línea CLAVE del programa de Google."; return; }
     $("feed-msg").textContent = "No se ha podido leer. Revisa que al implementar elegiste «Quién tiene acceso: Cualquier usuario» y que copiaste la dirección completa.";
   }
 });

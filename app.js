@@ -12,6 +12,7 @@ import * as cupones from "./cupones.js";
 import * as tareas from "./tareas.js";
 import * as pisosM from "./pisos.js";
 import * as menuM from "./menu.js";
+import "./viajes-correo.js";
 
 const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM];
 
