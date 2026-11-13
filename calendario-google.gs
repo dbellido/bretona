@@ -8,12 +8,13 @@ const CLAVE = 'PEGA_AQUI_LA_CLAVE';   // la misma que pongas en BRETONA (Calenda
 const BUSQUEDA_PISOS = 'from:(idealista.com OR fotocasa.es OR yaencontre.com) newer_than:45d';
 
 // Correos de reservas de viaje (de los últimos 6 meses).
-const BUSQUEDA_RESERVAS = 'newer_than:180d -category:promotions -category:social (' +
+const BUSQUEDA_RESERVAS = 'newer_than:180d -category:social (' +
   'from:(booking.com OR airbnb OR ryanair OR iberia OR vueling OR renfe OR easyjet OR aireuropa OR iryo OR ouigo OR volotea OR binter OR ' +
   'expedia OR edreams OR trainline OR rumbo OR logitravel OR hotels.com OR lufthansa OR flytap OR klm OR airfrance OR alsa OR europcar OR ' +
   'sixt OR hertz OR avis OR goldcar OR centauro OR rentalcars OR paradores OR melia OR nh-hotels OR barcelo OR iberostar OR riu) OR ' +
   'subject:("confirmación de reserva" OR "confirmación de tu reserva" OR "confirmación de su reserva" OR "reserva confirmada" OR ' +
-  '"booking confirmation" OR "tarjeta de embarque" OR "boarding pass" OR "tu billete" OR "sus billetes" OR "tus billetes" OR localizador OR itinerario))';
+  '"booking confirmation" OR "tarjeta de embarque" OR "boarding pass" OR "tu billete" OR "sus billetes" OR "tus billetes" OR localizador OR itinerario OR ' +
+  '"tu reserva" OR "su reserva" OR "your booking" OR "your reservation" OR "e-ticket" OR "confirmación de compra" OR "check-in"))';
 
 function doGet(e) {
   const p = (e && e.parameter) || {};

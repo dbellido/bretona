@@ -136,7 +136,7 @@ function listHtml() {
     <div class="view-head"><h1>Viajes</h1><button class="btn" id="v-new">Nuevo viaje</button></div>
     <div class="mail-row">
       <button class="btn ghost" id="v-mail"${ctx.house?.calendarFeed ? "" : " disabled"}>Buscar reservas en el correo</button>
-      <span class="muted small-print">${ctx.house?.calendarFeed ? "Vuelos, trenes, hoteles y coches de alquiler de los últimos 6 meses." : "Conecta primero el programa de Google (pestaña Calendario)."}</span>
+      <span class="muted small-print">${ctx.house?.calendarFeed ? `Vuelos, trenes, hoteles y coches de alquiler de los últimos 6 meses. <button class="link small" id="v-mail-again">Revisar otra vez todos los correos</button>` : "Conecta primero el programa de Google (pestaña Calendario)."}</span>
     </div>
     ${!trips.length ? `<div class="empty"><strong>Ningún viaje todavía</strong>Crea uno y guardad juntos los vuelos, el hotel y el plan de cada día.</div>` : ""}
     ${upcoming.length ? `<section class="panel plain"><h2>Próximos</h2><ul class="trip-list">${upcoming.map(card).join("")}</ul></section>` : ""}

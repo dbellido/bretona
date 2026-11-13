@@ -28,7 +28,7 @@ Abajo hay correos. Para cada correo que sea una CONFIRMACIÓN de una reserva rea
 NO incluyas: publicidad, ofertas, newsletters, encuestas, reservas canceladas, ni avisos que no traigan datos de la reserva.
 Un correo puede tener varias reservas (por ejemplo, ida y vuelta son 2 vuelos; cada trayecto de tren por separado).
 Responde SOLO con JSON con esta forma exacta:
-{"reservas":[{"correo":"ID del correo","tipo":"vuelo","titulo":"Vuelo Madrid → Oviedo · Iberia IB1234","fecha":"2026-12-04","hora":"08:15","fechaFin":"2026-12-04","horaFin":"09:20","localizador":"XK7P2Q","direccion":"","destino":"Oviedo","notas":"2 pasajeros, maleta de cabina"}]}
+{"reservas":[{"correo":"C1","tipo":"vuelo","titulo":"Vuelo Madrid → Oviedo · Iberia IB1234","fecha":"2026-12-04","hora":"08:15","fechaFin":"2026-12-04","horaFin":"09:20","localizador":"XK7P2Q","direccion":"","destino":"Oviedo","notas":"2 pasajeros, maleta de cabina"}]}
 Reglas:
 - "tipo": uno de ${TYPES.join(", ")}.
 - "titulo": corto y claro, con origen → destino y número de vuelo o tren, o el nombre del hotel.
@@ -38,13 +38,21 @@ Reglas:
 - "notas": breve (pasajeros, asientos, equipaje, régimen…). No copies datos de pago.
 - Si un correo no tiene reservas válidas, no pongas nada para él.
 
-${chunk.map((c) => `=== CORREO ID: ${c.id} | recibido ${c.fecha} | de: ${c.de} | asunto: ${c.asunto}
+- "correo": el código del correo (C1, C2…) donde está la reserva.
+
+${chunk.map((c, i) => `=== CORREO C${i + 1} | recibido ${c.fecha} | de: ${c.de} | asunto: ${c.asunto}
 ${c.datos ? "DATOS ESTRUCTURADOS: " + c.datos.slice(0, 3000) + "\n" : ""}TEXTO: ${c.texto.slice(0, 4000)}`).join("\n\n")}`;
 }
 
 function cleanBooking(r) {
-  const okDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(d || "") ? d : "";
-  const okTime = (t) => /^\d{2}:\d{2}$/.test(t || "") ? t : "";
+  const okDate = (d) => {
+    d = String(d || "").trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+    const m = d.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);   // 04/12/2026
+    if (m) return `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return "";
+  };
+  const okTime = (t) => { const m = String(t || "").match(/^(\d{1,2}):(\d{2})/); return m ? m[1].padStart(2, "0") + ":" + m[2] : ""; };
   return {
     mailId: String(r.correo || ""), type: TYPES.includes(r.tipo) ? r.tipo : "otro",
     name: cap(r.titulo || TYPE_LABEL[r.tipo] || "Reserva").slice(0, 80),
@@ -68,32 +76,46 @@ function matchTrip(b) {
   return getTrips().find((t) => b.date >= addDays(t.start, -3) && b.date <= addDays(t.end || t.start, 2)) || null;
 }
 
-async function scan() {
+async function scan({ again = false } = {}) {
   if (busy) return;
   busy = true;
   const btn = $("v-mail"); if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Buscando en el correo…'; }
   try {
     const data = await callScript({ tipo: "reservas" });
     if (!Array.isArray(data.correos)) throw new Error("viejo");
+    if (!data.correos.length) { toast("No he encontrado correos de reservas en los últimos 6 meses de este Gmail.", 6000); return; }
     let seen = new Set();
-    try { seen = new Set((await ctx.F.getDocs(sub("mailseen"))).docs.map((d) => d.id)); } catch {}
+    // "Revisar otra vez": solo se saltan los que ya se añadieron.
+    try { seen = new Set((await ctx.F.getDocs(sub("mailseen"))).docs.filter((d) => !again || d.data().result === "added").map((d) => d.id)); } catch {}
     mails = data.correos.filter((c) => c && c.id && !seen.has(safe(c.id)));
-    if (!mails.length) { toast("No hay reservas nuevas en el correo"); return; }
-    const results = [];
+    if (!mails.length) { toast(`Los ${data.correos.length} correos de reservas ya estaban revisados. Usa «Revisar otra vez» si falta alguno.`, 6000); return; }
+    const results = [], read = [];
+    let failedChunks = 0;
     for (let i = 0; i < mails.length; i += 5) {
+      const chunk = mails.slice(i, i + 5);
       if (btn) btn.innerHTML = `<span class="spinner"></span>Leyendo correos… ${Math.min(i + 5, mails.length)} de ${mails.length}`;
-      const d = await askGemini(promptFor(mails.slice(i, i + 5)), null, { temperature: 0.1 });
-      results.push(...(Array.isArray(d) ? d : d?.reservas || []));
+      try {
+        const d = await askGemini(promptFor(chunk), null, { temperature: 0.1 });
+        if (!d) throw new Error("respuesta ilegible");
+        for (const r of Array.isArray(d) ? d : d.reservas || []) {
+          // "C2" → el segundo correo de este grupo (si solo hay uno, es ese).
+          const k = String(r.correo || "").match(/(\d+)/);
+          const mail = chunk[k ? Number(k[1]) - 1 : -1] || chunk.find((c) => c.id === r.correo) || (chunk.length === 1 ? chunk[0] : null);
+          if (mail) results.push({ ...r, correo: mail.id });
+        }
+        read.push(...chunk);
+      } catch (e) { console.error(e); failedChunks++; }
     }
-    found = results.map(cleanBooking).filter((b) => b.date && mails.some((m) => m.id === b.mailId));
-    // Correos sin ninguna reserva: se marcan como revisados para no volver a leerlos.
-    const empty = mails.filter((m) => !found.some((b) => b.mailId === m.id));
+    found = results.map(cleanBooking).filter((b) => b.date);
+    if (!read.length) throw new Error("Gemini no ha podido leer los correos ahora. Prueba otra vez en un rato.");
+    // Correos leídos sin ninguna reserva: se marcan como revisados (los que fallaron se volverán a leer).
+    const empty = read.filter((m) => !found.some((b) => b.mailId === m.id));
     if (empty.length) {
       const b = ctx.F.writeBatch(ctx.fs);
       empty.forEach((m) => b.set(subDoc("mailseen", safe(m.id)), { result: "none", at: Date.now() }));
       b.commit().catch(() => {});
     }
-    if (!found.length) { toast(`He revisado ${mails.length} ${mails.length === 1 ? "correo" : "correos"} y no hay reservas nuevas`); return; }
+    if (!found.length) { toast(`He revisado ${read.length} ${read.length === 1 ? "correo" : "correos"} y no hay reservas de viaje${failedChunks ? " (algunos no se han podido leer; prueba otra vez)" : ""}`, 6000); return; }
     openReview();
   } catch (e) {
     console.error(e);
@@ -212,4 +234,5 @@ $("ml-add").addEventListener("click", async () => {
 
 document.addEventListener("click", (e) => {
   if (e.target.closest("#v-mail")) scan();
+  if (e.target.closest("#v-mail-again")) scan({ again: true });
 });

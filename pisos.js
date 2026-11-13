@@ -215,7 +215,9 @@ async function reread() {
       if (!a.leido) continue;
       b.update(subDoc("pisos", safeId(a.id)), {
         price: Number(a.precio) || null, size: Number(a.m2) || null, rooms: Number(a.habitaciones) || null,
-        garage: a.garaje ?? null, storage: a.trastero ?? null, title: cap(a.titulo || byId.get(safeId(a.id)).title).slice(0, 160),
+        ...(byId.get(safeId(a.id)).manual?.garage ? {} : { garage: a.garaje ?? null }),
+        ...(byId.get(safeId(a.id)).manual?.storage ? {} : { storage: a.trastero ?? null }),
+        title: cap(a.titulo || byId.get(safeId(a.id)).title).slice(0, 160),
         place: String(a.zona || "").slice(0, 120),
       });
       changed++;
@@ -304,7 +306,7 @@ function transitHtml(p) {
 function card(p, ppl, { swipe = "" } = {}) {
   const mine = (p.votes || {})[ctx.uid];
   const n = (x) => { try { return x.toLocaleString("es-ES", { useGrouping: "always" }); } catch { return x.toLocaleString("es-ES"); } };
-  const chip = (v, label) => `<span class="feat ${v === true ? "yes" : v === false ? "no" : "unk"}">${v === true ? "Con " + label : v === false ? "Sin " + label : label + " ?"}</span>`;
+  const chip = (v, label, field) => `<button type="button" class="feat ${v === true ? "yes" : v === false ? "no" : "unk"}" data-feat="${field}" aria-label="${label}: ${v === true ? "sí" : v === false ? "no" : "no se sabe"}. Toca para cambiar">${v === true ? "Con " + label : v === false ? "Sin " + label : label + " ?"}</button>`;
   const url = safeUrl(p.url);
   return `<li class="piso${swipe ? " swipe-card " + swipe : ""}" data-id="${esc(p.id)}">
     ${swipe ? '<span class="stamp like" aria-hidden="true">Me gusta</span><span class="stamp nope" aria-hidden="true">No</span>' : ""}
@@ -317,7 +319,7 @@ function card(p, ppl, { swipe = "" } = {}) {
         <span class="kv"><b>${p.price && p.size ? n(Math.round(p.price / p.size)) : "?"}</b> €/m²</span>
         ${p.rooms ? `<span class="kv"><b>${p.rooms}</b> hab.</span>` : ""}
       </div>
-      <div class="feats">${chip(p.garage, "garaje")}${chip(p.storage, "trastero")}</div>
+      <div class="feats">${chip(p.garage, "garaje", "garage")}${chip(p.storage, "trastero", "storage")}</div>
       <span class="piso-title">${esc(p.title)}</span>
       ${p.place ? `<span class="muted">${esc(p.place)}</span>` : ""}
       ${transitHtml(p)}
@@ -464,6 +466,14 @@ document.addEventListener("click", (e) => {
   const li = q(".piso"); if (!li) return;
   const p = pisos.find((x) => x.id === li.dataset.id); if (!p) return;
   if (q("[data-ps-edit]")) return openPiso(p);
+  if (q("[data-feat]")) {
+    // ? → Sí → No → ?   (y se recuerda que lo habéis puesto a mano)
+    const f = q("[data-feat]").dataset.feat, cur = p[f];
+    const next = cur === true ? false : cur === false ? null : true;
+    p[f] = next; render();
+    ctx.F.updateDoc(subDoc("pisos", p.id), { [f]: next, ["manual." + f]: true }).catch(failed);
+    return;
+  }
   const v = q("[data-vote]")?.dataset.vote;
   if (v) vote(p, v);
 });
