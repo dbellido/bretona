@@ -1,8 +1,8 @@
 // BRETONA service worker: la app abre sin conexión. Los datos los sincroniza Firestore.
-const VERSION = "bretona-v11";
+const VERSION = "bretona-v13";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./app.js", "./core.js", "./gastos.js", "./viajes.js", "./calendario.js", "./citas.js", "./cupones.js", "./feed.js", "./tareas.js", "./pisos.js", "./menu.js", "./viajes-correo.js", "./leche.js", "./firebase-config.js",
-  "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png",
+  "./manifest.webmanifest", "./icons/foto-192.png", "./icons/foto-512.png", "./icons/foto-apple-180.png",
 ];
 
 self.addEventListener("install", (e) => {

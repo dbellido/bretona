@@ -11,6 +11,8 @@ let busy = new Set();         // "week" o fechas que se están generando
 let open = new Set();         // platos con la receta desplegada
 let showLists = "";           // "", "fav", "no"
 let shopList = [];            // ingredientes en la hoja de "añadir a la compra"
+let confirmRepeat = false;    // pedir confirmación antes de reemplazar el menú de esta semana
+const MAX_BACK = 8;           // semanas anteriores que se pueden ver
 
 const DEFAULT_PREFS = { people: 2, days: 5, avoid: "Sin lactosa", notes: "" };
 const prefs = () => ({ ...DEFAULT_PREFS, ...(ctx.house?.menuPrefs || {}) });
@@ -144,6 +146,19 @@ async function replaceDay(date, { discard = false } = {}) {
   busy.delete(date); render();
 }
 
+// Copia el menú de la semana que se está viendo a esta semana (o a la próxima, si es fin de semana).
+async function repeatWeek() {
+  const src = menus.get(week); if (!src) return;
+  const target = defaultWeek();
+  const days = src.days.map((d, i) => ({ date: addDays(target, i), dish: d.dish ? { ...d.dish, id: uidShort() } : null }));
+  try {
+    await ctx.F.setDoc(subDoc("menus", target), { week: target, days, createdAt: Date.now(), by: ctx.uid, copiedFrom: week });
+    week = target; LS.set("bretona.menuweek", week);
+    toast(target === monday(ymd()) ? "Menú repetido esta semana" : "Menú repetido la semana que viene");
+    render(); window.scrollTo(0, 0);
+  } catch (e) { failed(e); }
+}
+
 function toggleFav(dish) {
   const key = recipeKey(dish.name);
   if (isFav(dish.name)) ctx.F.deleteDoc(subDoc("recipes", key)).then(() => toast("Quitada de favoritas")).catch(failed);
@@ -224,7 +239,7 @@ const star = (on) => `<svg width="20" height="20" viewBox="0 0 24 24" aria-hidde
 function dayHtml(d) {
   const dish = d.dish, loading = busy.has(d.date) || busy.has("week");
   const today = d.date === ymd();
-  if (!dish) return `<li class="dish empty-dish"><span class="dish-day">${esc(fmtDayLong(d.date))}</span><button class="link small" data-replace="${d.date}">Proponer plato</button></li>`;
+  if (!dish) return `<li class="dish empty-dish"><span class="dish-day">${esc(fmtDayLong(d.date))}</span>${week < monday(ymd()) ? "" : `<button class="link small" data-replace="${d.date}">Proponer plato</button>`}</li>`;
   const fav = isFav(dish.name), isOpen = open.has(dish.id);
   return `<li class="dish${today ? " today" : ""}${loading ? " loading" : ""}">
     <div class="dish-head">
@@ -244,8 +259,8 @@ function dayHtml(d) {
     <div class="dish-actions">
       <button class="link small" data-open="${dish.id}">${isOpen ? "Ocultar receta" : "Ver receta"}</button>
       <button class="link small" data-shop-day="${d.date}">A la compra</button>
-      <button class="link small" data-replace="${d.date}">Cambiar</button>
-      <button class="link small danger" data-discard="${d.date}">No me gusta</button>
+      ${week < monday(ymd()) ? "" : `<button class="link small" data-replace="${d.date}">Cambiar</button>
+      <button class="link small danger" data-discard="${d.date}">No me gusta</button>`}
     </div>`}
   </li>`;
 }
@@ -255,24 +270,33 @@ function render() {
   if (!root || !ctx.hid || !week) return;
   const m = menus.get(week);
   const thisWeek = monday(ymd());
-  const label = week === thisWeek ? "Esta semana" : week === addDays(thisWeek, 7) ? "La semana que viene" : `Semana del ${fmtDayLong(week)}`;
+  const past = week < thisWeek;
+  const label = week === thisWeek ? "Esta semana" : week === addDays(thisWeek, 7) ? "La semana que viene" : week === addDays(thisWeek, -7) ? "La semana pasada" : `Semana del ${fmtDayLong(week)}`;
+  const target = defaultWeek();
+  const pastWeeks = [...menus.keys()].filter((w) => w < thisWeek && w >= addDays(thisWeek, -7 * MAX_BACK)).sort().reverse();
   const p = prefs();
   const lists = showLists === "fav" ? favs() : showLists === "no" ? discarded() : [];
   root.innerHTML = `
     <div class="view-head"><h1>Menú</h1><button class="link small" id="mn-prefs">Preferencias</button></div>
     <div class="week-nav">
-      <button class="icon-btn" id="mn-prev" aria-label="Semana anterior" ${week <= thisWeek ? "disabled" : ""}>‹</button>
+      <button class="icon-btn" id="mn-prev" aria-label="Semana anterior" ${week <= addDays(thisWeek, -7 * MAX_BACK) ? "disabled" : ""}>‹</button>
       <div><b>${esc(label)}</b><span class="muted small-print">Comidas · ${p.people} ${p.people === 1 ? "persona" : "personas"}${p.avoid ? " · " + esc(p.avoid.toLowerCase()) : ""}</span></div>
       <button class="icon-btn" id="mn-next" aria-label="Semana siguiente" ${week >= addDays(thisWeek, 7) ? "disabled" : ""}>›</button>
     </div>
-    ${!m ? `<div class="empty"><strong>${busy.has("week") ? '<span class="spinner"></span>Preparando el menú…' : "Sin menú para esta semana"}</strong>
+    ${past && !m ? `<div class="empty"><strong>No hubo menú esa semana</strong>${pastWeeks.length ? "Mira las semanas de abajo." : ""}</div>` : ""}
+    ${past && m ? `<p class="muted small-print past-note">Menú de una semana pasada. Puedes ver las recetas, guardar favoritas o repetirlo.</p>` : ""}
+    ${past && !m ? "" : !m ? `<div class="empty"><strong>${busy.has("week") ? '<span class="spinner"></span>Preparando el menú…' : "Sin menú para esta semana"}</strong>
         ${busy.has("week") ? "Tarda unos segundos." : `Platos equilibrados, variados y fáciles. ${favs().length ? `Incluirá alguna de vuestras ${favs().length} favoritas.` : "Marca con la estrella los que os gusten y saldrán más a menudo."}`}
         ${busy.has("week") ? "" : `<div style="margin-top:12px"><button class="btn" id="mn-gen">Proponer menú</button></div>`}</div>`
       : `<ul class="dishes">${m.days.map(dayHtml).join("")}</ul>
         <div class="menu-foot">
-          <button class="btn" id="mn-shop-week">Añadir ingredientes de la semana</button>
-          <button class="btn ghost" id="mn-regen" ${busy.has("week") ? "disabled" : ""}>Proponer otro menú</button>
+          ${past ? (confirmRepeat
+            ? `<div class="confirm">${target === thisWeek ? "Esta semana" : "La semana que viene"} ya tiene menú. ¿Reemplazarlo por este? <button class="btn danger-btn" id="mn-repeat-yes">Reemplazar</button><button class="link" id="mn-repeat-no">Cancelar</button></div>`
+            : `<button class="btn" id="mn-repeat">Repetir este menú ${target === thisWeek ? "esta semana" : "la semana que viene"}</button>`) : ""}
+          <button class="btn${past ? " ghost" : ""}" id="mn-shop-week">Añadir ingredientes de la semana</button>
+          ${past ? "" : `<button class="btn ghost" id="mn-regen" ${busy.has("week") ? "disabled" : ""}>Proponer otro menú</button>`}
         </div>`}
+    ${pastWeeks.length && !past ? `<div class="past-weeks"><span class="muted small-print">Menús anteriores:</span>${pastWeeks.map((w) => `<button class="link small" data-week="${w}">${w === addDays(thisWeek, -7) ? "semana pasada" : "semana del " + esc(fmtDayLong(w).replace(/^\S+ /, ""))}</button>`).join("")}</div>` : ""}
     <div class="menu-lists">
       <button class="link small" data-lists="fav">${showLists === "fav" ? "Ocultar" : "Ver"} favoritas (${favs().length})</button>
       <button class="link small" data-lists="no">${showLists === "no" ? "Ocultar" : "Ver"} descartadas (${discarded().length})</button>
@@ -286,8 +310,12 @@ document.addEventListener("click", (e) => {
   const q = (s) => e.target.closest(s);
   const m = menus.get(week);
   const dayOf = (date) => m?.days.find((d) => d.date === date);
-  if (q("#mn-prev")) { week = addDays(week, -7); LS.set("bretona.menuweek", week); render(); return; }
-  if (q("#mn-next")) { week = addDays(week, 7); LS.set("bretona.menuweek", week); render(); return; }
+  if (q("#mn-prev")) { week = addDays(week, -7); confirmRepeat = false; LS.set("bretona.menuweek", week); render(); return; }
+  if (q("#mn-next")) { week = addDays(week, 7); confirmRepeat = false; LS.set("bretona.menuweek", week); render(); return; }
+  if (q("[data-week]")) { week = q("[data-week]").dataset.week; confirmRepeat = false; render(); window.scrollTo(0, 0); return; }
+  if (q("#mn-repeat")) { if (menus.has(defaultWeek())) { confirmRepeat = true; render(); } else repeatWeek(); return; }
+  if (q("#mn-repeat-no")) { confirmRepeat = false; render(); return; }
+  if (q("#mn-repeat-yes")) { confirmRepeat = false; repeatWeek(); return; }
   if (q("#mn-gen") || q("#mn-regen")) { if (!busy.has("week")) generateWeek(); return; }
   if (q("#mn-prefs")) return openPrefs();
   if (q("#mn-shop-week")) return openShop(m.days.map((d) => d.dish).filter(Boolean), "Ingredientes de la semana");
