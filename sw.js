@@ -1,5 +1,5 @@
 // BRETONA service worker: la app abre sin conexión. Los datos los sincroniza Firestore.
-const VERSION = "bretona-v13";
+const VERSION = "bretona-v14";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./app.js", "./core.js", "./gastos.js", "./viajes.js", "./calendario.js", "./citas.js", "./cupones.js", "./feed.js", "./tareas.js", "./pisos.js", "./menu.js", "./viajes-correo.js", "./leche.js", "./firebase-config.js",
   "./manifest.webmanifest", "./icons/foto-192.png", "./icons/foto-512.png", "./icons/foto-apple-180.png",
@@ -27,7 +27,8 @@ self.addEventListener("fetch", (e) => {
 
   // Red primero para la app (así ves las actualizaciones), caché si no hay conexión.
   e.respondWith(
-    fetch(req)
+    // Los archivos de la app se comprueban siempre con GitHub (sin esperar a que caduque su caché).
+    fetch(sameOrigin ? new Request(req, { cache: "no-cache" }) : req)
       .then((res) => {
         if (res.ok || res.type === "opaque") {
           const copy = res.clone();
