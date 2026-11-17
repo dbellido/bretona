@@ -110,6 +110,31 @@ export const mapsLink = (q) => "https://www.google.com/maps/search/?api=1&query=
 export const safeUrl = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.href : ""; } catch { return ""; } };
 
 /* ---------- Fotos y Gemini ---------- */
+// Descomprime la foto UNA vez y devuelve varios tamaños (por ejemplo, uno para Gemini y otro para guardar).
+export async function shrinkMany(file, specs) {
+  let src, w, h, revoke = null;
+  try {
+    src = await createImageBitmap(file, { imageOrientation: "from-image" });
+    w = src.width; h = src.height;
+  } catch {
+    const url = URL.createObjectURL(file); revoke = url;
+    src = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    w = src.naturalWidth; h = src.naturalHeight;
+  }
+  try {
+    return specs.map(([max, quality]) => {
+      const k = Math.min(1, max / Math.max(w, h));
+      const c = document.createElement("canvas");
+      c.width = Math.round(w * k); c.height = Math.round(h * k);
+      c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL("image/jpeg", quality);
+      return { preview: dataUrl, base64: dataUrl.split(",")[1] };
+    });
+  } finally {
+    if (revoke) URL.revokeObjectURL(revoke);
+    src.close?.();
+  }
+}
 export async function shrink(file, max = 1600, quality = 0.85) {
   const url = URL.createObjectURL(file);
   try {
@@ -126,18 +151,26 @@ export async function shrink(file, max = 1600, quality = 0.85) {
 }
 
 // Devuelve el JSON que responde Gemini, o lanza un Error con un mensaje para la persona.
+const badModels = new Set();
 export async function askGemini(prompt, base64 = null, { temperature = 0.9, retries = 1 } = {}) {
   let text = null, lastErr = null;
   try {
     if (!ctx.F.getAI) Object.assign(ctx.F, await import(FB + "firebase-ai.js"));
     const ai = ctx.F.getAI(ctx.app, { backend: new ctx.F.GoogleAIBackend() });
-    for (const model of geminiModels) {
+    // Primero el modelo que funcionó la última vez; los que no existen no se vuelven a probar.
+    const pref = LS.get("bretona.gmodel");
+    const order = [...geminiModels].sort((a, b) => (b === pref) - (a === pref)).filter((m) => !badModels.has(m));
+    for (const model of order.length ? order : geminiModels) {
       try {
         const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: base64 ? 0.1 : temperature, maxOutputTokens: 8192 } });
         const r = await m.generateContent(base64 ? [prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }] : prompt);
         text = r.response.text();
+        if (model !== pref) LS.set("bretona.gmodel", model);
         break;
-      } catch (e) { lastErr = e; console.warn("Modelo", model, e); }
+      } catch (e) {
+        lastErr = e; console.warn("Modelo", model, e);
+        if (/404|not found|not supported|does not exist/i.test(String(e?.message || e))) badModels.add(model);
+      }
     }
   } catch (e) { lastErr = e; }
   if (text == null) {

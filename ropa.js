@@ -1,7 +1,28 @@
 // Pestaña Banco de ropa: la ropa del bebé por tallas, con foto, para usarla toda y saber qué falta.
-import { ctx, $, esc, cap, norm, toast, failed, sub, subDoc, ymd, addDays, parseYmd, daysBetween, fmtDate, shrink, askGemini, LS } from "./core.js";
+import { ctx, $, esc, cap, norm, toast, failed, sub, subDoc, ymd, addDays, parseYmd, daysBetween, fmtDate, shrinkMany, askGemini, LS } from "./core.js";
 
 let items = [], unsub = null, editingId = null, photo = null;
+// Lectura de Gemini en curso: { token, docId, touched } — se puede guardar sin esperarla.
+let pendingAI = null, aiSeq = 0;
+
+// Las fotos se convierten una sola vez en una dirección "blob:"; así el móvil no las descomprime
+// de nuevo cada vez que se repinta la lista.
+const blobCache = new Map();
+function thumbUrl(x) {
+  if (!x.thumb) return "";
+  const key = x.id + ":" + x.thumb.length;
+  let url = blobCache.get(key);
+  if (!url) {
+    try {
+      const [head, b64] = x.thumb.split(",");
+      const bin = atob(b64), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      url = URL.createObjectURL(new Blob([bytes], { type: (head.match(/data:([^;]+)/) || [])[1] || "image/jpeg" }));
+    } catch { url = x.thumb; }
+    blobCache.set(key, url);
+  }
+  return url;
+}
 let showSize = LS.get("bretona.ropasize") || "";   // talla desplegada
 let showGone = false;
 let outfits = [], outfitBusy = false, outfitMsg = "", outfitFor = "";   // propuestas de conjuntos
@@ -99,7 +120,7 @@ function itemHtml(x, highlight) {
   const worn = x.worn || 0;
   return `<li class="cloth-card st-${esc(x.state || "ok")}" data-id="${esc(x.id)}">
     <div class="cc-photo">
-      ${x.thumb ? `<img src="${esc(x.thumb)}" alt="${esc(x.desc || t.label)}" loading="lazy">` : `<span class="cc-empty" aria-hidden="true">${esc(t.label.slice(0, 1))}</span>`}
+      ${x.thumb ? `<img src="${esc(thumbUrl(x))}" alt="${esc(x.desc || t.label)}" loading="lazy" decoding="async">` : `<span class="cc-empty" aria-hidden="true">${esc(t.label.slice(0, 1))}</span>`}
       ${st.badge ? `<span class="cc-badge">${esc(st.badge)}</span>` : highlight && !worn ? `<span class="cc-badge new">Sin estrenar</span>` : ""}
       ${x.qty > 1 ? `<span class="cc-qty">×${x.qty}</span>` : ""}
     </div>
@@ -134,7 +155,7 @@ function render() {
       ${outfitBusy ? `<p class="muted"><span class="spinner"></span>Combinando…</p>` : outfitMsg ? `<p class="small-print note">${esc(outfitMsg)}</p>` : ""}
       ${outfits.map((o, i) => `<div class="outfit">
         <div class="outfit-head"><b>${esc(o.name)}</b><button class="btn small" data-wear="${i}">Ponérselo</button></div>
-        <div class="outfit-items">${o.items.map((x) => `<figure>${x.thumb ? `<img src="${esc(x.thumb)}" alt="">` : `<span class="cl-thumb empty">${esc(typeOf(x.type).label.slice(0, 1))}</span>`}<figcaption>${esc(x.desc || typeOf(x.type).label)}</figcaption></figure>`).join("")}</div>
+        <div class="outfit-items">${o.items.map((x) => `<figure>${x.thumb ? `<img src="${esc(thumbUrl(x))}" alt="" decoding="async">` : `<span class="cl-thumb empty">${esc(typeOf(x.type).label.slice(0, 1))}</span>`}<figcaption>${esc(x.desc || typeOf(x.type).label)}</figcaption></figure>`).join("")}</div>
         ${o.why ? `<p class="small-print muted">${esc(o.why)}</p>` : ""}
       </div>`).join("")}
     </section>`;
@@ -219,6 +240,7 @@ Responde SOLO con JSON con esta forma exacta:
 }
 
 function openCloth(x) {
+  if (pendingAI && !pendingAI.saved) pendingAI = null; // lo que quedara de una prenda cancelada
   editingId = x?.id || null; photo = null;
   $("cl-title").textContent = x ? "Editar prenda" : "Nueva prenda";
   $("cl-img").hidden = !x?.thumb; if (x?.thumb) $("cl-img").src = x.thumb;
@@ -242,31 +264,55 @@ Responde SOLO con JSON con esta forma exacta:
 - "descripcion": corta, con color y detalle (manga larga/corta, estampado).
 - "cantidad": cuántas prendas iguales se ven (normalmente 1).`;
 
+const AI_FIELDS = { "cl-type": "type", "cl-size": "size", "cl-season": "season", "cl-desc": "desc", "cl-qty": "qty" };
+for (const id of Object.keys(AI_FIELDS)) $(id).addEventListener("input", () => pendingAI?.touched.add(id));
+
 $("cl-photo").addEventListener("change", async (e) => {
   const file = e.target.files && e.target.files[0];
   e.target.value = "";
   if (!file) return;
+  const token = ++aiSeq;
+  pendingAI = { token, docId: editingId, touched: new Set(), saved: false };
   $("cl-save").disabled = true;
-  $("cl-status").innerHTML = '<span class="spinner"></span>Mirando la prenda…';
+  $("cl-status").innerHTML = '<span class="spinner"></span>Preparando la foto…';
+  let big;
   try {
-    const big = await shrink(file, 1280);     // para que Gemini lea la etiqueta
-    const small = await shrink(file, 460, 0.72);    // foto que se guarda (unos 40-50 KB): se ve bien en la cuadrícula
-    photo = small.preview;
+    // Una sola descompresión: 1024 px para que Gemini lea la etiqueta y 460 px para guardar (40-50 KB).
+    const [forAI, small] = await shrinkMany(file, [[1024, 0.8], [460, 0.72]]);
+    big = forAI; photo = small.preview;
     $("cl-img").src = photo; $("cl-img").hidden = false;
-    const d = await askGemini(CLOTH_PROMPT, big.base64);
-    if (!$("dlg-cloth").open) return;
-    if (d) {
-      if (TYPES.some((t) => t.id === d.tipo)) $("cl-type").value = d.tipo;
-      if (SIZES.some((s) => s.id === d.talla)) $("cl-size").value = d.talla;
-      if (SEASONS[d.temporada]) $("cl-season").value = d.temporada;
-      if (d.descripcion) $("cl-desc").value = cap(d.descripcion).slice(0, 80);
-      if (Number(d.cantidad) > 1) $("cl-qty").value = Math.min(50, Number(d.cantidad));
-      $("cl-status").textContent = d.talla ? "Revisa los datos y pulsa Guardar." : "No se ve la talla en la foto: elígela tú.";
-    } else $("cl-status").textContent = "No he sabido leer la foto. Rellena los datos a mano.";
-  } catch (err) {
-    $("cl-status").textContent = (err.message || "No se ha podido leer la foto.") + " Rellena los datos a mano.";
+  } catch {
+    $("cl-status").textContent = "No se puede abrir esta foto. Prueba con otra.";
+    $("cl-save").disabled = false;
+    return;
   }
+  // Ya se puede guardar: Gemini completa los datos por detrás.
   $("cl-save").disabled = false;
+  $("cl-status").innerHTML = '<span class="spinner"></span>Gemini está mirando la prenda. Puedes guardar ya: completará los datos al terminar.';
+  let d = null, err = null;
+  try { d = await askGemini(CLOTH_PROMPT, big.base64); } catch (x) { err = x; }
+  const job = pendingAI;
+  if (!job || job.token !== token) return; // se eligió otra foto entretanto
+  const values = {};
+  if (d) {
+    if (TYPES.some((t) => t.id === d.tipo)) values["cl-type"] = d.tipo;
+    if (SIZES.some((sz) => sz.id === d.talla)) values["cl-size"] = d.talla;
+    if (SEASONS[d.temporada]) values["cl-season"] = d.temporada;
+    if (d.descripcion) values["cl-desc"] = cap(d.descripcion).slice(0, 80);
+    if (Number(d.cantidad) > 1) values["cl-qty"] = Math.min(50, Number(d.cantidad));
+  }
+  const fresh = Object.entries(values).filter(([id]) => !job.touched.has(id));
+  if (!job.saved && $("dlg-cloth").open) {
+    for (const [id, v] of fresh) $(id).value = v;
+    $("cl-status").textContent = err ? (err.message || "No se ha podido leer la foto.") + " Rellena los datos a mano."
+      : !d ? "No he sabido leer la foto. Rellena los datos a mano."
+      : d.talla ? "Revisa los datos y pulsa Guardar." : "No se ve la talla en la foto: elígela tú.";
+  } else if (job.saved && job.docId && fresh.length) {
+    // Ya estaba guardada: se completa con lo que no se cambió a mano.
+    const patch = Object.fromEntries(fresh.map(([id, v]) => [AI_FIELDS[id], id === "cl-qty" ? Number(v) : v]));
+    ctx.F.updateDoc(subDoc("clothes", job.docId), patch).then(() => toast("Gemini ha completado los datos de la prenda")).catch(() => {});
+  }
+  if (job.saved || !$("dlg-cloth").open) pendingAI = null;
 });
 $("cl-form").addEventListener("submit", (e) => {
   if (e.submitter?.value !== "save") return;
@@ -275,9 +321,11 @@ $("cl-form").addEventListener("submit", (e) => {
     qty: Math.min(50, Math.max(1, Number($("cl-qty").value) || 1)), desc: cap($("cl-desc").value).slice(0, 80), state: $("cl-state").value,
   };
   if (photo) data.thumb = photo;
+  const job = pendingAI;
+  if (job) job.saved = true;
   if (editingId) ctx.F.updateDoc(subDoc("clothes", editingId), data).catch(failed);
   else ctx.F.addDoc(sub("clothes"), { ...data, worn: 0, by: ctx.uid, createdAt: Date.now() })
-    .then(() => toast(`Guardado en ${sizeOf(data.size).label}`)).catch(failed);
+    .then((ref) => { if (job) job.docId = ref.id; toast(`Guardado en ${sizeOf(data.size).label}`); }).catch(failed);
   editingId = null; photo = null;
 });
 $("cl-delete").addEventListener("click", () => {
