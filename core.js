@@ -110,7 +110,7 @@ export const mapsLink = (q) => "https://www.google.com/maps/search/?api=1&query=
 export const safeUrl = (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.href : ""; } catch { return ""; } };
 
 /* ---------- Fotos y Gemini ---------- */
-export async function shrink(file, max = 1600) {
+export async function shrink(file, max = 1600, quality = 0.85) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
@@ -118,7 +118,7 @@ export async function shrink(file, max = 1600) {
     const c = document.createElement("canvas");
     c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
     c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    const dataUrl = c.toDataURL("image/jpeg", 0.85);
+    const dataUrl = c.toDataURL("image/jpeg", quality);
     return { preview: dataUrl, base64: dataUrl.split(",")[1] };
   } finally {
     URL.revokeObjectURL(url);
@@ -126,14 +126,14 @@ export async function shrink(file, max = 1600) {
 }
 
 // Devuelve el JSON que responde Gemini, o lanza un Error con un mensaje para la persona.
-export async function askGemini(prompt, base64 = null, { temperature = 0.9 } = {}) {
+export async function askGemini(prompt, base64 = null, { temperature = 0.9, retries = 1 } = {}) {
   let text = null, lastErr = null;
   try {
     if (!ctx.F.getAI) Object.assign(ctx.F, await import(FB + "firebase-ai.js"));
     const ai = ctx.F.getAI(ctx.app, { backend: new ctx.F.GoogleAIBackend() });
     for (const model of geminiModels) {
       try {
-        const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: base64 ? 0.1 : temperature } });
+        const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: base64 ? 0.1 : temperature, maxOutputTokens: 8192 } });
         const r = await m.generateContent(base64 ? [prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }] : prompt);
         text = r.response.text();
         break;
@@ -150,8 +150,21 @@ export async function askGemini(prompt, base64 = null, { temperature = 0.9 } = {
           ? "Se ha llegado al límite gratuito de fotos por ahora. Prueba dentro de un rato."
           : base64 ? "No se ha podido leer la foto. Prueba otra vez o con más luz." : "Gemini no ha respondido. Prueba otra vez en un momento.");
   }
-  try { return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "")); }
-  catch { return null; }
+  const parsed = parseLoose(text);
+  // Si la respuesta llega cortada o mal formada, se vuelve a pedir una vez.
+  if (parsed == null && retries > 0) return askGemini(prompt, base64, { temperature, retries: retries - 1 });
+  return parsed;
+}
+// Lee el JSON aunque venga con ```json, texto alrededor o una coma de más.
+function parseLoose(text) {
+  const t = String(text || "").replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+  try { return JSON.parse(t); } catch {}
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a >= 0 && b > a) {
+    const inner = t.slice(a, b + 1).replace(/,\s*([}\]])/g, "$1");
+    try { return JSON.parse(inner); } catch {}
+  }
+  return null;
 }
 
 /* ---------- Programa de Google de la familia (Apps Script) ---------- */

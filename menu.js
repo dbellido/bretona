@@ -102,11 +102,14 @@ function toDish(x) {
     steps: (x.pasos || []).slice(0, 12).map((t) => String(t).slice(0, 400)),
   };
 }
-async function ask(n, opts) {
+async function ask(n, opts, tries = 2) {
   const data = await askGemini(promptFor(n, opts));
-  const list = Array.isArray(data) ? data : data?.platos || [];
-  if (!list.length) throw new Error("Gemini no ha propuesto platos. Prueba otra vez.");
-  return list.slice(0, n).map(toDish);
+  const list = (Array.isArray(data) ? data : data?.platos || []).map(toDish).filter((d) => d.name && d.ingredients.length);
+  if (!list.length) {
+    if (tries > 1) return ask(n, opts, tries - 1);
+    throw new Error("Gemini no ha propuesto platos. Prueba otra vez.");
+  }
+  return list.slice(0, n);
 }
 
 async function generateWeek() {
@@ -119,8 +122,19 @@ async function generateWeek() {
     const pool = favs().filter((r) => r.dish && !recent.has(norm(r.name))).sort(() => Math.random() - 0.5);
     const favCount = Math.min(pool.length, dates.length >= 5 ? 2 : 1);
     const chosen = pool.slice(0, favCount).map((r) => ({ ...r.dish, id: uidShort(), fromFav: true }));
-    const fresh = await ask(dates.length - chosen.length, { keep: chosen.map((d) => d.name), avoidNames: [...recentNames(week), ...discarded().map((r) => r.name), ...favs().map((r) => r.name)] });
-    const all = [...fresh];
+    // En tandas pequeñas (3 + 2): las respuestas cortas de Gemini fallan mucho menos.
+    const need = dates.length - chosen.length, all = [];
+    const avoid = [...recentNames(week), ...discarded().map((r) => r.name), ...favs().map((r) => r.name)];
+    let failures = 0;
+    for (let left = need; left > 0;) {
+      const n = Math.min(3, left);
+      try {
+        const got = await ask(n, { keep: [...chosen.map((d) => d.name), ...all.map((d) => d.name)], avoidNames: avoid });
+        all.push(...got); left -= got.length || n;
+      } catch (e) { console.error(e); failures++; left -= n; }
+    }
+    if (!all.length && !chosen.length) throw new Error("Gemini no ha podido preparar el menú ahora. Prueba otra vez en un momento.");
+    if (failures) setTimeout(() => toast("Algún día se ha quedado sin plato: pulsa «Proponer plato» en ese día.", 6000), 300);
     const favDays = new Set([...dates.keys()].sort(() => Math.random() - 0.5).slice(0, chosen.length));
     const days = dates.map((date, i) => ({ date, dish: favDays.has(i) ? chosen.pop() : all.shift() || null }));
     await ctx.F.setDoc(subDoc("menus", week), { week, days, createdAt: Date.now(), by: ctx.uid });

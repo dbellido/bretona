@@ -66,6 +66,9 @@ El nivel gratuito tiene un límite de peticiones por minuto y por día, de sobra
 - **Tareas**: tareas de casa con persona, fecha y repetición (cada día, semana, 2 semanas o mes).
 - **Citas**: las citas médicas de toda la familia. Las del calendario de Google salen solas; con ••• se dice para quién son (por ejemplo, Gael) o se ocultan si no son médicas.
 - **Más → Menú**: comidas de la semana propuestas por Gemini (equilibradas, variadas y fáciles), con receta, favoritas que salen más a menudo, descartadas que no vuelven y un botón para pasar los ingredientes a la lista de la compra.
+- **Más → Banco de leche**: plan de extracción hasta la vuelta al trabajo, almacén y cuántas jornadas cubre la reserva.
+- **Más → Crecimiento**: percentiles de la OMS y estimación cada día 7.
+- **Más → Ropa**: la ropa del bebé por tallas con foto; propone conjuntos con lo que menos se ha puesto.
 - **Más → Pisos (beta)**: anuncios de las alertas por correo de idealista, Fotocasa y yaencontré. Cada miembro vota; si todos dicen «Me gusta», pasa a Favoritos.
 
 ## Leer el calendario de Google (opcional)

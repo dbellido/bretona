@@ -14,8 +14,10 @@ import * as pisosM from "./pisos.js";
 import * as menuM from "./menu.js";
 import "./viajes-correo.js";
 import * as leche from "./leche.js";
+import * as crecimiento from "./crecimiento.js";
+import * as ropa from "./ropa.js";
 
-const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM, leche];
+const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM, leche, crecimiento, ropa];
 
 /* ---------- Utilidades ---------- */
 function show(screen) {
@@ -23,8 +25,8 @@ function show(screen) {
 }
 
 /* ---------- Pestañas ---------- */
-const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM, menu: menuM, leche };
-const IN_MORE = ["gastos", "viajes", "pisos", "menu", "leche"];
+const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM, menu: menuM, leche, crecimiento, ropa };
+const IN_MORE = ["gastos", "viajes", "pisos", "menu", "leche", "crecimiento", "ropa"];
 function route() {
   if (!hid) return;
   let v = location.hash.slice(1);
