@@ -115,6 +115,18 @@ export function onHouse() { render(); }
 
 /* ---------- Pintar ---------- */
 const count = (list) => list.reduce((n, x) => n + (Number(x.qty) || 1), 0);
+// Aviso en la tarjeta cuando Gemini está leyendo la prenda, falló o no llegó a leerla.
+const retrying = new Set();
+function aiNote(x) {
+  if (retrying.has(x.id)) return `<span class="ai-note"><span class="spinner"></span>Gemini está leyendo la prenda…</span>`;
+  const stale = x.aiStatus === "pending" && Date.now() - (x.createdAt || 0) > 120000;
+  if (x.aiStatus === "pending" && !stale) return `<span class="ai-note"><span class="spinner"></span>Gemini está leyendo la prenda…</span>`;
+  if (x.aiStatus === "error" || stale || (!x.desc && x.thumb)) {
+    return `<span class="ai-note err">${x.aiStatus === "error" ? esc(x.aiError || "Gemini no ha podido leerla.") : stale ? "Gemini no llegó a terminar." : "Sin datos de Gemini."}
+      <button class="link small" data-reread="${esc(x.id)}">Leer con Gemini</button></span>`;
+  }
+  return "";
+}
 function itemHtml(x, highlight) {
   const t = typeOf(x.type), st = STATES[x.state] || STATES.ok;
   const worn = x.worn || 0;
@@ -127,6 +139,7 @@ function itemHtml(x, highlight) {
     <div class="cc-body">
       <span class="cc-name">${esc(x.desc || t.label)}</span>
       <span class="muted small-print">${esc(t.label)}${highlight && x.state === "ok" && worn ? ` · ${worn} ${worn === 1 ? "vez" : "veces"}` : ""}</span>
+      ${aiNote(x)}
       <div class="cc-actions">
         ${highlight && x.state === "ok" ? `<button class="btn ghost small worn-btn" data-worn="${esc(x.id)}" aria-label="Puesta hoy: ${esc(x.desc || t.label)}">✓ Hoy</button>` : ""}
         <select class="state-pick" data-state-of="${esc(x.id)}" aria-label="Estado de ${esc(x.desc || t.label)}">${Object.entries(STATES).map(([k, v]) => `<option value="${k}"${k === (x.state || "ok") ? " selected" : ""}>${v.label}</option>`).join("")}</select>
@@ -194,6 +207,21 @@ document.addEventListener("click", async (e) => {
   if (q("[data-size]")) { const id = q("[data-size]").dataset.size; showSize = showSize === id ? "" : id; LS.set("bretona.ropasize", showSize); render(); return; }
   if (q("[data-cloth]")) return openCloth(items.find((x) => x.id === q("[data-cloth]").dataset.cloth));
   if (q(".cc-photo img")) return openCloth(items.find((x) => x.id === q(".cloth-card").dataset.id));
+  if (q("[data-reread]")) {
+    const x = items.find((i) => i.id === q("[data-reread]").dataset.reread);
+    if (!x?.thumb || retrying.has(x.id)) return;
+    retrying.add(x.id); render();
+    try {
+      const values = await readCloth(x.thumb.split(",")[1]);
+      await ctx.F.updateDoc(subDoc("clothes", x.id), { ...toPatch(Object.entries(values)), aiStatus: ctx.F.deleteField(), aiError: ctx.F.deleteField() });
+      toast("Datos de la prenda completados");
+    } catch (err) {
+      console.error(err);
+      await ctx.F.updateDoc(subDoc("clothes", x.id), { aiStatus: "error", aiError: String(err.message || err).slice(0, 300) }).catch(() => {});
+    }
+    retrying.delete(x.id); render();
+    return;
+  }
   if (q("[data-worn]")) {
     const x = items.find((i) => i.id === q("[data-worn]").dataset.worn);
     ctx.F.updateDoc(subDoc("clothes", x.id), { worn: (x.worn || 0) + 1, lastWorn: ymd() }).catch(failed);
@@ -264,6 +292,21 @@ Responde SOLO con JSON con esta forma exacta:
 - "descripcion": corta, con color y detalle (manga larga/corta, estampado).
 - "cantidad": cuántas prendas iguales se ven (normalmente 1).`;
 
+// Pide a Gemini los datos de la prenda. Devuelve { "cl-type": …, … } o lanza un Error con el motivo.
+async function readCloth(base64) {
+  const d = await askGemini(CLOTH_PROMPT, base64);
+  if (!d || typeof d !== "object") throw new Error("Gemini ha respondido algo que no entiendo.");
+  const values = {};
+  if (TYPES.some((t) => t.id === d.tipo)) values["cl-type"] = d.tipo;
+  if (SIZES.some((sz) => sz.id === d.talla)) values["cl-size"] = d.talla;
+  if (SEASONS[d.temporada]) values["cl-season"] = d.temporada;
+  if (d.descripcion) values["cl-desc"] = cap(d.descripcion).slice(0, 80);
+  if (Number(d.cantidad) > 1) values["cl-qty"] = Math.min(50, Number(d.cantidad));
+  if (!Object.keys(values).length) throw new Error("Gemini no ha reconocido la prenda en la foto.");
+  return values;
+}
+const toPatch = (entries) => Object.fromEntries(entries.map(([id, v]) => [AI_FIELDS[id], id === "cl-qty" ? Number(v) : v]));
+
 const AI_FIELDS = { "cl-type": "type", "cl-size": "size", "cl-season": "season", "cl-desc": "desc", "cl-qty": "qty" };
 for (const id of Object.keys(AI_FIELDS)) $(id).addEventListener("input", () => pendingAI?.touched.add(id));
 
@@ -289,28 +332,25 @@ $("cl-photo").addEventListener("change", async (e) => {
   // Ya se puede guardar: Gemini completa los datos por detrás.
   $("cl-save").disabled = false;
   $("cl-status").innerHTML = '<span class="spinner"></span>Gemini está mirando la prenda. Puedes guardar ya: completará los datos al terminar.';
-  let d = null, err = null;
-  try { d = await askGemini(CLOTH_PROMPT, big.base64); } catch (x) { err = x; }
+  let values = {}, err = null;
+  try { values = await readCloth(big.base64); } catch (x) { err = x; console.error(x); }
   const job = pendingAI;
   if (!job || job.token !== token) return; // se eligió otra foto entretanto
-  const values = {};
-  if (d) {
-    if (TYPES.some((t) => t.id === d.tipo)) values["cl-type"] = d.tipo;
-    if (SIZES.some((sz) => sz.id === d.talla)) values["cl-size"] = d.talla;
-    if (SEASONS[d.temporada]) values["cl-season"] = d.temporada;
-    if (d.descripcion) values["cl-desc"] = cap(d.descripcion).slice(0, 80);
-    if (Number(d.cantidad) > 1) values["cl-qty"] = Math.min(50, Number(d.cantidad));
-  }
+  job.done = true; job.error = err ? err.message : "";
   const fresh = Object.entries(values).filter(([id]) => !job.touched.has(id));
   if (!job.saved && $("dlg-cloth").open) {
     for (const [id, v] of fresh) $(id).value = v;
-    $("cl-status").textContent = err ? (err.message || "No se ha podido leer la foto.") + " Rellena los datos a mano."
-      : !d ? "No he sabido leer la foto. Rellena los datos a mano."
-      : d.talla ? "Revisa los datos y pulsa Guardar." : "No se ve la talla en la foto: elígela tú.";
-  } else if (job.saved && job.docId && fresh.length) {
-    // Ya estaba guardada: se completa con lo que no se cambió a mano.
-    const patch = Object.fromEntries(fresh.map(([id, v]) => [AI_FIELDS[id], id === "cl-qty" ? Number(v) : v]));
-    ctx.F.updateDoc(subDoc("clothes", job.docId), patch).then(() => toast("Gemini ha completado los datos de la prenda")).catch(() => {});
+    $("cl-status").textContent = err ? err.message + " Puedes rellenarlo a mano o guardarla y pulsar «Leer con Gemini» más tarde."
+      : values["cl-size"] ? "Revisa los datos y pulsa Guardar." : "No se ve la talla en la foto: elígela tú.";
+  } else if (job.saved) {
+    // Ya estaba guardada: se completa con lo que no se cambió a mano (o se apunta el error en la tarjeta).
+    const waitId = async () => { for (let i = 0; i < 40 && !job.docId; i++) await new Promise((r) => setTimeout(r, 250)); return job.docId; };
+    const id = await waitId();
+    if (id) {
+      const patch = err ? { aiStatus: "error", aiError: err.message.slice(0, 300) } : { ...toPatch(fresh), aiStatus: ctx.F.deleteField(), aiError: ctx.F.deleteField() };
+      ctx.F.updateDoc(subDoc("clothes", id), patch)
+        .then(() => toast(err ? "Gemini no ha podido leer la prenda: mira la tarjeta" : "Gemini ha completado los datos de la prenda")).catch(() => {});
+    }
   }
   if (job.saved || !$("dlg-cloth").open) pendingAI = null;
 });
@@ -322,7 +362,11 @@ $("cl-form").addEventListener("submit", (e) => {
   };
   if (photo) data.thumb = photo;
   const job = pendingAI;
-  if (job) job.saved = true;
+  if (job) {
+    job.saved = true;
+    if (!job.done) data.aiStatus = "pending";
+    else if (job.error && !data.desc) Object.assign(data, { aiStatus: "error", aiError: job.error.slice(0, 300) });
+  }
   if (editingId) ctx.F.updateDoc(subDoc("clothes", editingId), data).catch(failed);
   else ctx.F.addDoc(sub("clothes"), { ...data, worn: 0, by: ctx.uid, createdAt: Date.now() })
     .then((ref) => { if (job) job.docId = ref.id; toast(`Guardado en ${sizeOf(data.size).label}`); }).catch(failed);

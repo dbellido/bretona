@@ -690,3 +690,6 @@ table.est td,table.est th{padding-inline:4px}
 .sp-sub{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;margin:0}
 .sp-sub legend{font-size:13px;font-weight:700;color:var(--muted);padding:0 4px}
 .sp-chip.unset{background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.ai-note{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:12px;color:var(--muted);margin-top:2px}
+.ai-note.err{color:var(--tomato)}
+.ai-note .link{font-size:12px;padding:2px 0}

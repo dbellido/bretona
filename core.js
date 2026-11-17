@@ -181,7 +181,7 @@ export async function askGemini(prompt, base64 = null, { temperature = 0.9, retr
         ? "La lectura de fotos no está activada en Firebase (LEEME, paso 5)."
         : /quota|429|RESOURCE_EXHAUSTED/i.test(msg)
           ? "Se ha llegado al límite gratuito de fotos por ahora. Prueba dentro de un rato."
-          : base64 ? "No se ha podido leer la foto. Prueba otra vez o con más luz." : "Gemini no ha respondido. Prueba otra vez en un momento.");
+          : (base64 ? "No se ha podido leer la foto." : "Gemini no ha respondido.") + (msg ? ` (detalle: ${msg.replace(/\s+/g, " ").slice(0, 160)})` : ""));
   }
   const parsed = parseLoose(text);
   // Si la respuesta llega cortada o mal formada, se vuelve a pedir una vez.

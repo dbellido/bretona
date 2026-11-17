@@ -1,5 +1,5 @@
 // BRETONA service worker: la app abre sin conexión. Los datos los sincroniza Firestore.
-const VERSION = "bretona-v21";
+const VERSION = "bretona-v22";
 const SHELL = [
   "./", "./index.html", "./styles.css", "./app.js", "./core.js", "./gastos.js", "./viajes.js", "./calendario.js", "./citas.js", "./cupones.js", "./feed.js", "./tareas.js", "./pisos.js", "./menu.js", "./viajes-correo.js", "./leche.js", "./crecimiento.js", "./crecimiento-oms.js", "./ropa.js", "./recambios.js", "./firebase-config.js",
   "./manifest.webmanifest", "./icons/foto-192.png", "./icons/foto-512.png", "./icons/foto-apple-180.png",
