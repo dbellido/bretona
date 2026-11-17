@@ -16,8 +16,9 @@ import "./viajes-correo.js";
 import * as leche from "./leche.js";
 import * as crecimiento from "./crecimiento.js";
 import * as ropa from "./ropa.js";
+import * as recambios from "./recambios.js";
 
-const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM, leche, crecimiento, ropa];
+const MODULES = [gastos, viajes, calendario, citas, cupones, tareas, pisosM, menuM, leche, crecimiento, ropa, recambios];
 
 /* ---------- Utilidades ---------- */
 function show(screen) {
@@ -25,8 +26,8 @@ function show(screen) {
 }
 
 /* ---------- Pestañas ---------- */
-const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM, menu: menuM, leche, crecimiento, ropa };
-const IN_MORE = ["gastos", "viajes", "pisos", "menu", "leche", "crecimiento", "ropa"];
+const VIEWS = { compra: null, tareas, calendario, citas, gastos, viajes, pisos: pisosM, menu: menuM, leche, crecimiento, ropa, recambios };
+const IN_MORE = ["gastos", "viajes", "pisos", "menu", "leche", "crecimiento", "ropa", "recambios"];
 function route() {
   if (!hid) return;
   let v = location.hash.slice(1);
@@ -48,10 +49,10 @@ $("dlg-more").addEventListener("click", (e) => { if (e.target === $("dlg-more"))
 // Avisos en la barra: tareas para hoy y pisos por votar.
 function badges() {
   const setB = (id, n) => { $(id).textContent = n > 9 ? "9+" : n; $(id).hidden = !n; };
-  const t = tareas.myDueCount(), p = pisosM.myPendingCount();
-  setB("badge-tareas", t); setB("badge-pisos", p); setB("badge-mas", p);
+  const t = tareas.myDueCount(), p = pisosM.myPendingCount(), r = recambios.urgentCount();
+  setB("badge-tareas", t); setB("badge-pisos", p); setB("badge-recambios", r); setB("badge-mas", p + r);
 }
-ctx.onTasks = badges; ctx.onPisos = badges;
+ctx.onTasks = badges; ctx.onPisos = badges; ctx.onSupplies = badges;
 let noteTimer;
 function note(msg, ms = 4000) {
   $("note").textContent = msg || "";

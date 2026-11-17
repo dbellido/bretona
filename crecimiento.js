@@ -271,3 +271,16 @@ $("ch-form").addEventListener("submit", (e) => {
   ctx.F.updateDoc(houseRef(), { child: { name: cap($("ch-name").value).slice(0, 30), birth: $("ch-birth").value, sex: $("ch-sex").value } })
     .then(() => toast("Datos guardados")).catch(failed);
 });
+
+// Para otras pestañas (por ejemplo, la talla de pañal en Recambios).
+export const growthApi = {
+  child, ageMonths,
+  lastWeight: () => { const r = [...rows].reverse().find((x) => x.weight); return r ? { date: r.date, weight: r.weight } : null; },
+  // Peso estimado en una fecha si sigue en el mismo percentil que en su última pesada.
+  weightAt(date) {
+    const c = child(), last = growthApi.lastWeight();
+    if (!c.sex || !last) return null;
+    const z = zScore("peso", ageMonths(last.date), last.weight);
+    return valueAt(lms("peso", ageMonths(date)), z);
+  },
+};
