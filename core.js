@@ -151,25 +151,38 @@ export async function shrink(file, max = 1600, quality = 0.85) {
 }
 
 // Devuelve el JSON que responde Gemini, o lanza un Error con un mensaje para la persona.
-const badModels = new Set();
+// Modelos que no hay que probar: "missing" (no existe; se vuelve a probar al día siguiente) y
+// "exhausted" (cupo gratuito agotado; se renueva a las 0:00 de California, las 9:00 en España).
+const quotaDay = () => new Date(Date.now() - 8 * 3600000).toISOString().slice(0, 10);
+function modelSkips() {
+  let m = {}; try { m = JSON.parse(LS.get("bretona.gskip") || "{}"); } catch {}
+  return new Set(Object.entries(m).filter(([, v]) => v.why === "missing" ? Date.now() - v.at < 86400000 : v.day === quotaDay()).map(([k]) => k));
+}
+function markModel(model, why) {
+  let m = {}; try { m = JSON.parse(LS.get("bretona.gskip") || "{}"); } catch {}
+  m[model] = { why, at: Date.now(), day: quotaDay() };
+  LS.set("bretona.gskip", JSON.stringify(m));
+}
 export async function askGemini(prompt, base64 = null, { temperature = 0.9, retries = 1 } = {}) {
   let text = null, lastErr = null;
   try {
     if (!ctx.F.getAI) Object.assign(ctx.F, await import(FB + "firebase-ai.js"));
     const ai = ctx.F.getAI(ctx.app, { backend: new ctx.F.GoogleAIBackend() });
-    // Primero el modelo que funcionó la última vez; los que no existen no se vuelven a probar.
-    const pref = LS.get("bretona.gmodel");
-    const order = [...geminiModels].sort((a, b) => (b === pref) - (a === pref)).filter((m) => !badModels.has(m));
+    // En el orden de la lista, saltando los que no existen (se revisan cada semana)
+    // y los que ya han agotado hoy su cupo gratuito.
+    const skip = modelSkips();
+    const order = geminiModels.filter((m) => !skip.has(m));
     for (const model of order.length ? order : geminiModels) {
       try {
         const m = ctx.F.getGenerativeModel(ai, { model, generationConfig: { responseMimeType: "application/json", temperature: base64 ? 0.1 : temperature, maxOutputTokens: 8192 } });
         const r = await m.generateContent(base64 ? [prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }] : prompt);
         text = r.response.text();
-        if (model !== pref) LS.set("bretona.gmodel", model);
         break;
       } catch (e) {
         lastErr = e; console.warn("Modelo", model, e);
-        if (/404|not found|not supported|does not exist/i.test(String(e?.message || e))) badModels.add(model);
+        const em = String(e?.message || e);
+        if (/404|not found|not supported|does not exist/i.test(em)) markModel(model, "missing");
+        else if (/quota|429|RESOURCE_EXHAUSTED/i.test(em)) markModel(model, "exhausted");
       }
     }
   } catch (e) { lastErr = e; }
@@ -180,7 +193,7 @@ export async function askGemini(prompt, base64 = null, { temperature = 0.9, retr
       : /api-not-enabled|not enabled|PERMISSION_DENIED|403/i.test(msg)
         ? "La lectura de fotos no está activada en Firebase (LEEME, paso 5)."
         : /quota|429|RESOURCE_EXHAUSTED/i.test(msg)
-          ? "Se ha llegado al límite gratuito de fotos por ahora. Prueba dentro de un rato."
+          ? "Se ha agotado por hoy el cupo gratuito de Gemini. Vuelve a funcionar mañana a partir de las 9:00."
           : (base64 ? "No se ha podido leer la foto." : "Gemini no ha respondido.") + (msg ? ` (detalle: ${msg.replace(/\s+/g, " ").slice(0, 160)})` : ""));
   }
   const parsed = parseLoose(text);

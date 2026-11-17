@@ -9,6 +9,7 @@ export const firebaseConfig = {
   appId: "1:190741670715:web:bb73f1af5ea834b9b5a51e",
 };
 
-// Modelos de Gemini para leer fotos, en orden de preferencia.
-// Si el primero no está disponible en el plan gratuito, la app prueba el siguiente.
-export const geminiModels = ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"];
+// Modelos de Gemini, en orden de preferencia. Primero los "Flash-Lite": en el plan gratuito
+// permiten unas 500 peticiones al día (los "Flash", unas 20). Cada modelo tiene su propio cupo:
+// si uno se agota o no existe, la app pasa al siguiente.
+export const geminiModels = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash"];

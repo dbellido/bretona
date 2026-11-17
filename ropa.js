@@ -92,6 +92,7 @@ document.body.insertAdjacentHTML("beforeend", `
     <div class="row">
       <label class="field"><span>Temporada</span><select id="cl-season">${Object.entries(SEASONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
       <label class="field" style="flex:0 0 96px"><span>Cuántas</span><input id="cl-qty" type="number" min="1" max="50" value="1"></label>
+      <label class="field" style="flex:0 0 110px"><span>Veces puesta</span><input id="cl-worn" type="number" min="0" max="999" value="0"></label>
     </div>
     <label class="field"><span>Descripción</span><input id="cl-desc" maxlength="80" placeholder="Body de rayas azules, manga larga"></label>
     <label class="field"><span>Estado</span><select id="cl-state">${Object.entries(STATES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join("")}</select></label>
@@ -179,6 +180,7 @@ function render() {
     <div class="view-head"><h1>Banco de ropa</h1><button class="btn" id="cl-new">Añadir prenda</button></div>
     <section class="panel size-now">
       <div class="panel-head"><h2>Talla de ahora · <b>${esc(cur.label)}</b></h2><span class="muted small-print">${weeksLeft ? `le quedan ~${weeksLeft} semanas` : "a punto de cambiar"}</span></div>
+      ${curItems.some((x) => x.state === "ok" && !x.worn) ? `<p class="small-print muted">«Sin estrenar» = nunca marcada como puesta. Si es ropa que ya habíais usado, <button class="link small" id="cl-allused">márcala toda como ya usada</button> o pon las veces en •••.</p>` : ""}
       ${curItems.length ? `<p class="small-print muted">Primero lo que menos se ha puesto, para aprovecharlo todo antes de que se le quede pequeño.</p>
         <ul class="clothes grid">${curItems.map((x) => itemHtml(x, true)).join("")}</ul>` : `<p class="muted">No hay ropa de esta talla todavía. Añade las prendas con una foto.</p>`}
     </section>
@@ -225,6 +227,17 @@ document.addEventListener("click", async (e) => {
   if (q("[data-worn]")) {
     const x = items.find((i) => i.id === q("[data-worn]").dataset.worn);
     ctx.F.updateDoc(subDoc("clothes", x.id), { worn: (x.worn || 0) + 1, lastWorn: ymd() }).catch(failed);
+    return;
+  }
+  if (q("#cl-allused")) {
+    const cur = currentSize();
+    const todo = items.filter((x) => x.size === cur.id && x.state === "ok" && !x.worn);
+    try {
+      const b = ctx.F.writeBatch(ctx.fs);
+      todo.forEach((x) => b.update(subDoc("clothes", x.id), { worn: 1 }));
+      await b.commit();
+      toast(`${todo.length} ${todo.length === 1 ? "prenda marcada" : "prendas marcadas"} como ya usadas`);
+    } catch (err) { failed(err); }
     return;
   }
   if (q("[data-outfit]")) return suggestOutfits(q("[data-outfit]").dataset.outfit);
@@ -274,7 +287,7 @@ function openCloth(x) {
   $("cl-img").hidden = !x?.thumb; if (x?.thumb) $("cl-img").src = x.thumb;
   $("cl-type").value = x?.type || "body"; $("cl-size").value = x?.size || currentSize().id;
   $("cl-season").value = x?.season || "all"; $("cl-qty").value = x?.qty || 1;
-  $("cl-desc").value = x?.desc || ""; $("cl-state").value = x?.state || "ok";
+  $("cl-desc").value = x?.desc || ""; $("cl-state").value = x?.state || "ok"; $("cl-worn").value = x?.worn || 0;
   $("cl-msg").textContent = ""; $("cl-delete").hidden = !x; $("cl-save").disabled = false;
   $("cl-status").textContent = "Con la foto, Gemini propone el tipo, la talla y la temporada. Si se ve la etiqueta, mejor.";
   $("dlg-cloth").showModal();
@@ -359,6 +372,7 @@ $("cl-form").addEventListener("submit", (e) => {
   const data = {
     type: $("cl-type").value, size: $("cl-size").value, season: $("cl-season").value,
     qty: Math.min(50, Math.max(1, Number($("cl-qty").value) || 1)), desc: cap($("cl-desc").value).slice(0, 80), state: $("cl-state").value,
+    worn: Math.max(0, Math.round(Number($("cl-worn").value) || 0)),
   };
   if (photo) data.thumb = photo;
   const job = pendingAI;
@@ -368,7 +382,7 @@ $("cl-form").addEventListener("submit", (e) => {
     else if (job.error && !data.desc) Object.assign(data, { aiStatus: "error", aiError: job.error.slice(0, 300) });
   }
   if (editingId) ctx.F.updateDoc(subDoc("clothes", editingId), data).catch(failed);
-  else ctx.F.addDoc(sub("clothes"), { ...data, worn: 0, by: ctx.uid, createdAt: Date.now() })
+  else ctx.F.addDoc(sub("clothes"), { ...data, by: ctx.uid, createdAt: Date.now() })
     .then((ref) => { if (job) job.docId = ref.id; toast(`Guardado en ${sizeOf(data.size).label}`); }).catch(failed);
   editingId = null; photo = null;
 });
