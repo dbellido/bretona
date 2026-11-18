@@ -272,10 +272,35 @@ $("ch-form").addEventListener("submit", (e) => {
     .then(() => toast("Datos guardados")).catch(failed);
 });
 
+// Tablas LMS de niño o niña; si no se sabe, la media de las dos.
+function lmsAny(indicator, months, sex) {
+  if (sex) { const t = WHO[indicator][sex], m = Math.max(0, Math.min(60, months)), i = Math.min(59, Math.floor(m)), f = m - i; return t[i].map((v, k) => v + (t[i + 1][k] - v) * f); }
+  const a = lmsAny(indicator, months, "niño"), b = lmsAny(indicator, months, "niña");
+  return a.map((v, k) => (v + b[k]) / 2);
+}
 // Para otras pestañas (por ejemplo, la talla de pañal en Recambios).
 export const growthApi = {
   child, ageMonths,
   lastWeight: () => { const r = [...rows].reverse().find((x) => x.weight); return r ? { date: r.date, weight: r.weight } : null; },
+  // Longitud estimada en una fecha: siguiendo su percentil si hay alguna medida de longitud,
+  // o la mediana de la OMS si aún no se ha medido.
+  lengthAt(date) {
+    const c = child();
+    const last = [...rows].reverse().find((x) => x.length);
+    const z = last && c.sex ? zScore("talla", ageMonths(last.date), last.length) : 0;
+    return valueAt(lmsAny("talla", ageMonths(date), c.sex), z);
+  },
+  // Edad (en meses) a la que el bebé medio de la OMS mide esos centímetros: "68 cm ≈ 6 meses".
+  medianAgeForCm(cm) {
+    const sex = child().sex;
+    for (let m = 0; m <= 60; m += 0.1) if (valueAt(lmsAny("talla", m, sex), 0) >= cm) return m;
+    return 60;
+  },
+  // Fecha en la que este bebé llegará a medir esos centímetros (según su curva).
+  dateForLength(cm) {
+    for (let i = -400; i <= 1800; i += 2) { const d = addDays(ymd(), i); if (daysBetween(child().birth, d) >= 0 && growthApi.lengthAt(d) >= cm) return d; }
+    return null;
+  },
   // Peso estimado en una fecha si sigue en el mismo percentil que en su última pesada.
   weightAt(date) {
     const c = child(), last = growthApi.lastWeight();

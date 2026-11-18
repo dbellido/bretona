@@ -693,3 +693,6 @@ table.est td,table.est th{padding-inline:4px}
 .ai-note{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;font-size:12px;color:var(--muted);margin-top:2px}
 .ai-note.err{color:var(--tomato)}
 .ai-note .link{font-size:12px;padding:2px 0}
+.outfit-rate{display:flex;gap:8px;flex-wrap:wrap}
+.outfit-fb{display:flex;flex-direction:column;gap:6px}
+.ok-text{color:var(--accent);margin:0}
